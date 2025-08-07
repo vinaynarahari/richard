@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/.build/arm64-apple-macosx/debug/IMHelper.build/master.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/Sources/IMHelper/main.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/.build/arm64-apple-macosx/debug/IMHelper.build/main.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/.build/arm64-apple-macosx/debug/IMHelper.build/main.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/.build/arm64-apple-macosx/debug/IMHelper.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/tools/imessage-helper/.build/arm64-apple-macosx/debug/IMHelper.build/main.swiftdeps"
+  }
+}

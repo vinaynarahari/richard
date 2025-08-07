@@ -1,0 +1,7 @@
+pyproject.toml
+app/main.py
+richard_orchestrator.egg-info/PKG-INFO
+richard_orchestrator.egg-info/SOURCES.txt
+richard_orchestrator.egg-info/dependency_links.txt
+richard_orchestrator.egg-info/requires.txt
+richard_orchestrator.egg-info/top_level.txt

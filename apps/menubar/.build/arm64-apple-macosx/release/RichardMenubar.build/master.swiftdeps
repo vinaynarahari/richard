@@ -1,0 +1,16 @@
+version: "Apple Swift version 6.0.2 (swiftlang-6.0.2.1.2 clang-1600.0.26.4)"
+options: "04069c1ad9dfc0b5dc33cf7e84d3d80a2c6fec0ca4592483dd7eaa2cb0676ded"
+build_start_time: [1754544977, 782389000]
+build_end_time: [1754544984, 894680000]
+inputs:
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/APIClient.swift": [1754536426, 449014268]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/AppState.swift": [1754532768, 941603986]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ChatView.swift": [1754536149, 562453737]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ConnectionsView.swift": [1754525724, 882541245]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/Models.swift": [1754525703, 657777793]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/RichardMenubarApp.swift": [1754526703, 681903266]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/RootPopoverView.swift": [1754531075, 461351417]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/SettingsView.swift": [1754525753, 174774406]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/StatusBarController.swift": [1754543239, 258195230]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ToastView.swift": [1754525746, 96600518]
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/_noentry.swift": [1754527403, 639941652]

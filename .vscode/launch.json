@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:richard}/apps/menubar",
+            "name": "Debug RichardMenubar (apps/menubar)",
+            "program": "${workspaceFolder:richard}/apps/menubar/.build/debug/RichardMenubar",
+            "preLaunchTask": "swift: Build Debug RichardMenubar (apps/menubar)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:richard}/apps/menubar",
+            "name": "Release RichardMenubar (apps/menubar)",
+            "program": "${workspaceFolder:richard}/apps/menubar/.build/release/RichardMenubar",
+            "preLaunchTask": "swift: Build Release RichardMenubar (apps/menubar)"
+        }
+    ]
+}

@@ -1,0 +1,71 @@
+{
+  "": {
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/master.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/APIClient.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/APIClient.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/APIClient.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/APIClient~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/APIClient.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/AppState.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/AppState.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/AppState.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/AppState~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/AppState.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ChatView.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ChatView.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ChatView.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ChatView~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ChatView.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ConnectionsView.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ConnectionsView.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ConnectionsView.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ConnectionsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ConnectionsView.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/Models.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/Models.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/Models.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/Models.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/RichardMenubarApp.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RichardMenubarApp.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RichardMenubarApp.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RichardMenubarApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RichardMenubarApp.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/RootPopoverView.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RootPopoverView.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RootPopoverView.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RootPopoverView~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/RootPopoverView.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/SettingsView.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/SettingsView.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/SettingsView.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/SettingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/SettingsView.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/StatusBarController.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/StatusBarController.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/StatusBarController.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/StatusBarController~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/StatusBarController.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/ToastView.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ToastView.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ToastView.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ToastView~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/ToastView.swiftdeps"
+  },
+  "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/Sources/RichardMenubar/_noentry.swift": {
+    "dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/_noentry.d",
+    "object": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/_noentry.swift.o",
+    "swiftmodule": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/_noentry~partial.swiftmodule",
+    "swift-dependencies": "/Users/vinaynarahari/Desktop/Github/richard/apps/menubar/.build/arm64-apple-macosx/debug/RichardMenubar.build/_noentry.swiftdeps"
+  }
+}
