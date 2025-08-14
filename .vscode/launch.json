@@ -17,6 +17,24 @@
             "name": "Release RichardMenubar (apps/menubar)",
             "program": "${workspaceFolder:richard}/apps/menubar/.build/release/RichardMenubar",
             "preLaunchTask": "swift: Build Release RichardMenubar (apps/menubar)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:richard}/tools/imessage-helper",
+            "name": "Debug imessage-helper (tools/imessage-helper)",
+            "program": "${workspaceFolder:richard}/tools/imessage-helper/.build/debug/imessage-helper",
+            "preLaunchTask": "swift: Build Debug imessage-helper (tools/imessage-helper)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:richard}/tools/imessage-helper",
+            "name": "Release imessage-helper (tools/imessage-helper)",
+            "program": "${workspaceFolder:richard}/tools/imessage-helper/.build/release/imessage-helper",
+            "preLaunchTask": "swift: Build Release imessage-helper (tools/imessage-helper)"
         }
     ]
 }

@@ -20,6 +20,7 @@ struct ChatView: View {
     @State private var streamTask: Task<Void, Never>? = nil
     @State private var inactivityTimer: Timer? = nil
     @State private var lastInteractionTime = Date()
+    @FocusState private var composerFocused: Bool
 
     // DEBUG: persistent diagnostics for last request/response
     @State private var showDebug = false
@@ -31,7 +32,7 @@ struct ChatView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
+            // header removed per request
             if showDebug { debugPane }
             conversationList
             composer
@@ -43,6 +44,7 @@ struct ChatView: View {
         }
         .onAppear {
             startInactivityTimer()
+            composerFocused = true
         }
     }
 
@@ -65,6 +67,11 @@ struct ChatView: View {
             }
             Toggle("Strict", isOn: $strictMode)
                 .help("When enabled, blocks any response not from 127.0.0.1:5273")
+
+            Button("Copy Chat") { copyConversation() }
+                .disabled(messages.isEmpty)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .help("Copy the entire conversation to clipboard (Shift+Cmd+C)")
 
             Button("Test") {
                 input = "hi"
@@ -140,6 +147,7 @@ struct ChatView: View {
                 }
                 .padding(.vertical, 6)
             }
+            // Selection is enabled per-message; not at container level to avoid stealing focus
             .frame(minHeight: 240, maxHeight: 300)
             .onChange(of: messages.count) { _ in
                 if let last = messages.last {
@@ -158,6 +166,7 @@ struct ChatView: View {
                 .foregroundColor(msg.role == "user" ? Color.secondary : Color.blue)
                 .frame(width: 56, alignment: .leading)
             Text(msg.content)
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(msg.role == "user" ? Color.gray.opacity(0.12) : Color.blue.opacity(0.10))
@@ -167,12 +176,13 @@ struct ChatView: View {
 
     private var composer: some View {
         HStack(spacing: 8) {
-            TextField("Type a message…", text: $input, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit {
-                    // Simple approach: onSubmit handles Enter, Shift+Enter is handled by TextField naturally
-                    if isStreaming { cancelStream() } else { send() }
-                }
+            AutoGrowingTextEditor(text: $input, minHeight: 32, maxHeight: 140, placeholder: "Type a message…")
+                .focused($composerFocused)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3))
+                )
+                .onTapGesture { composerFocused = true }
             Button(isStreaming ? "Stop" : "Send") {
                 if isStreaming { cancelStream() } else { send() }
             }
@@ -187,6 +197,20 @@ struct ChatView: View {
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
+    }
+
+    private func copyConversation() {
+        guard !messages.isEmpty else { return }
+        let lines = messages.map { m in
+            let speaker = (m.role == "user") ? "You" : "Richard"
+            return "\(speaker): \(m.content)"
+        }
+        let text = lines.joined(separator: "\n\n")
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        state.showSuccess("Copied conversation")
+        composerFocused = true
     }
 
     private func send() {
@@ -259,6 +283,7 @@ struct ChatView: View {
         // Update interaction time on user activity
         lastInteractionTime = Date()
         resetInactivityTimer()
+        composerFocused = true
     }
     
     // MARK: - Inactivity Timer
@@ -284,5 +309,57 @@ struct ChatView: View {
         messages.removeAll()
         lastStatus = "cleared (5min inactive)"
         print("[ChatView] Chat cleared after 5 minutes of inactivity")
+        composerFocused = true
+    }
+}
+
+private struct AutoGrowingTextEditor: View {
+    @Binding var text: String
+    let minHeight: CGFloat
+    let maxHeight: CGFloat
+    let placeholder: String
+
+    @State private var dynamicHeight: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .font(.system(size: 13))
+                .padding(6)
+                .frame(height: min(max(dynamicHeight, minHeight), maxHeight))
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if text.isEmpty {
+                Text(placeholder)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
+            }
+
+            // Hidden sizing text
+            Text(text.isEmpty ? "A" : text + " ")
+                .font(.system(size: 13))
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(0)
+                .padding(12)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(key: TextHeightPreferenceKey.self, value: proxy.size.height)
+                    }
+                )
+        }
+        .onPreferenceChange(TextHeightPreferenceKey.self) { h in
+            dynamicHeight = h
+        }
+    }
+}
+
+private struct TextHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

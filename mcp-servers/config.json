@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "python",
+      "args": ["mcp-servers/gmail/server.py"],
+      "env": {
+        "PYTHONPATH": "mcp-servers/gmail"
+      }
+    },
+    "notion": {
+      "command": "python",
+      "args": ["mcp-servers/notion/server.py"],
+      "env": {
+        "PYTHONPATH": "mcp-servers/notion",
+        "NOTION_CLIENT_SECRET": "${NOTION_CLIENT_SECRET}"
+      }
+    },
+    "google-search": {
+      "command": "python",
+      "args": ["mcp-servers/google-search/server.py"],
+      "env": {
+        "PYTHONPATH": "mcp-servers/google-search",
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}"
+      }
+    }
+  }
+}

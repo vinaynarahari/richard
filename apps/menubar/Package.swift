@@ -18,7 +18,9 @@ let package = Package(
             path: "Sources",
             exclude: [
                 // Exclude legacy main.swift to avoid @main conflict
-                "RichardMenubar/main.swift"
+                "RichardMenubar/main.swift",
+                // Exclude old ActionsView that's not being used
+                "RichardMenubar/ActionsView.swift"
             ],
             sources: [
                 "RichardMenubar/RichardMenubarApp.swift",

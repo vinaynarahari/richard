@@ -1,0 +1,41 @@
+{
+  "timestamp": "2025-08-14T13:27:11.627626",
+  "version": "1.0.0",
+  "status": "completed",
+  "checks": {
+    "file_permissions": {
+      "issues": 5
+    },
+    "environment_variables": {
+      "issues": 2
+    },
+    "certificates": {
+      "issues": 3
+    },
+    "vault_integrity": {
+      "issues": 1
+    },
+    "configuration": {
+      "issues": 0
+    }
+  },
+  "issues": [
+    "\u26a0\ufe0f  ./.env.security: File not found",
+    "\u26a0\ufe0f  ./security/certs/server.key: File not found",
+    "\u26a0\ufe0f  ./security/certs/client.key: File not found",
+    "\u26a0\ufe0f  ./security/certs/ca.key: File not found",
+    "\u26a0\ufe0f  ./security/vault.enc: File not found",
+    "\u274c SECURITY_VAULT_PASSWORD: Not set or empty",
+    "\u274c JWT_SECRET_KEY: Not set or empty",
+    "\u274c ca certificate: Not found",
+    "\u274c server certificate: Not found",
+    "\u274c client certificate: Not found",
+    "\u274c Secure vault: Not found"
+  ],
+  "recommendations": [
+    "Address all identified security issues",
+    "Review security configuration settings",
+    "Run security tests regularly"
+  ],
+  "total_issues": 11
+}

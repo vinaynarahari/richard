@@ -1,0 +1,17 @@
+{
+  "name": "mcp-servers",
+  "version": "1.0.0",
+  "description": "This directory contains Model Context Protocol (MCP) servers that provide external service integrations for the Richard application.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@playwright/mcp": "^0.0.33",
+    "playwright": "^1.55.0-alpha-2025-08-07"
+  }
+}

@@ -9,6 +9,14 @@ final class AppState: ObservableObject {
     @Published var defaultNotionParentId: String = UserDefaults.standard.string(forKey: "defaultNotionParentId") ?? ""
     @Published var toast: ToastData? = nil
 
+    // Voice state
+    @Published var isVoiceListening: Bool = false
+    @Published var isRecording: Bool = false
+    @Published var isProcessingVoice: Bool = false
+    @Published var lastTranscription: String = ""
+    @Published var voiceResponse: String = ""
+    @Published var wakeWordDetected: Bool = false
+
     // Trigger to force refresh across views
     @Published var triggerRefresh: Bool = false
 
@@ -41,6 +49,40 @@ final class AppState: ObservableObject {
     func saveDefaults() {
         UserDefaults.standard.set(defaultGoogleAccount, forKey: "defaultGoogleAccount")
         UserDefaults.standard.set(defaultNotionParentId, forKey: "defaultNotionParentId")
+    }
+
+    // MARK: - Voice Controls
+    func startVoiceListening() {
+        Task { @MainActor in
+            do {
+                try await api.startVoiceListening()
+                isVoiceListening = true
+                showSuccess("Voice listening started - say 'Hey Richard'")
+            } catch {
+                showError("Failed to start voice listening: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func stopVoiceListening() {
+        Task { @MainActor in
+            do {
+                try await api.stopVoiceListening()
+                isVoiceListening = false
+                isRecording = false
+                wakeWordDetected = false
+                showSuccess("Voice listening stopped")
+            } catch {
+                showError("Failed to stop voice listening: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func simulateWakeWord() {
+        wakeWordDetected = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.wakeWordDetected = false
+        }
     }
 
     func showSuccess(_ msg: String) { toast = .success(msg) }

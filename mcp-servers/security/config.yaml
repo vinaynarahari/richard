@@ -1,0 +1,256 @@
+# Security Configuration for MCP Servers
+# This file defines security policies and configurations
+
+# Authentication & Authorization
+auth:
+  # JWT Configuration
+  jwt:
+    expiration_hours: 1
+    refresh_days: 7
+    algorithm: "HS256"
+    
+  # Session Management
+  session:
+    timeout_minutes: 60
+    cleanup_interval_minutes: 15
+    max_concurrent_sessions: 5
+    
+  # Password Policy
+  password_policy:
+    min_length: 12
+    require_uppercase: true
+    require_lowercase: true
+    require_numbers: true
+    require_symbols: true
+    max_age_days: 90
+    history_count: 5
+
+# Rate Limiting & DDoS Protection
+rate_limiting:
+  # Default limits (per hour)
+  default_requests_per_hour: 1000
+  burst_requests: 10
+  
+  # Per-endpoint limits
+  endpoints:
+    gmail_send_email: 50
+    gmail_create_draft: 100
+    gmail_list_messages: 500
+    notion_create_page: 100
+    notion_query_database: 200
+    search_web: 300
+    
+  # IP-based blocking
+  ip_blocking:
+    enabled: true
+    threshold_violations: 5
+    block_duration_minutes: 60
+    
+# Input Validation
+validation:
+  # Maximum input lengths
+  max_lengths:
+    email_subject: 255
+    email_body: 100000
+    search_query: 1000
+    notion_page_title: 255
+    file_name: 255
+    url: 2000
+    
+  # Allowed file types
+  allowed_file_types:
+    - pdf
+    - doc
+    - docx
+    - txt
+    - csv
+    - xlsx
+    
+  # Content filtering
+  content_filter:
+    block_scripts: true
+    block_sql_injection: true
+    block_xss: true
+    sanitize_html: true
+
+# TLS/SSL Configuration  
+tls:
+  # Certificate settings
+  certificates:
+    ca_validity_days: 3650  # 10 years
+    server_validity_days: 365  # 1 year
+    client_validity_days: 365  # 1 year
+    key_size: 2048
+    
+  # Protocol settings
+  protocol:
+    minimum_version: "TLSv1.2"
+    preferred_ciphers:
+      - "ECDHE+AESGCM"
+      - "ECDHE+CHACHA20"
+      - "DHE+AESGCM"
+      - "DHE+CHACHA20"
+    disable_weak_ciphers: true
+    
+  # Client authentication
+  client_auth:
+    require_client_cert: true
+    verify_client_cert: true
+
+# Audit Logging
+audit:
+  # Log levels
+  log_level: "INFO"
+  
+  # Log categories
+  categories:
+    authentication: true
+    authorization: true
+    api_calls: true
+    security_events: true
+    errors: true
+    
+  # Log retention
+  retention:
+    max_file_size_mb: 100
+    max_files: 10
+    compress_old_logs: true
+    
+  # Log destinations
+  destinations:
+    file: "./logs/audit.log"
+    syslog: false
+    remote_server: null
+
+# Encryption & Key Management
+encryption:
+  # Symmetric encryption
+  symmetric:
+    algorithm: "AES-256-GCM"
+    key_rotation_days: 30
+    
+  # Asymmetric encryption  
+  asymmetric:
+    algorithm: "RSA-2048"
+    key_rotation_days: 365
+    
+  # Key storage
+  key_storage:
+    use_hsm: false  # Hardware Security Module
+    vault_path: "./security/vault.enc"
+    backup_keys: true
+
+# Security Monitoring
+monitoring:
+  # Threat detection
+  threat_detection:
+    enabled: true
+    suspicious_patterns:
+      - multiple_failed_auth
+      - unusual_api_patterns
+      - rate_limit_violations
+      - invalid_input_patterns
+      
+  # Alerting
+  alerts:
+    email_recipients:
+      - security@example.com
+    severity_threshold: "WARNING"
+    
+  # Metrics
+  metrics:
+    collect_performance: true
+    collect_security_events: true
+    retention_days: 30
+
+# Network Security
+network:
+  # Allowed networks/IPs
+  allowed_networks:
+    - "127.0.0.1/32"  # localhost
+    - "10.0.0.0/8"    # private network
+    - "172.16.0.0/12" # private network  
+    - "192.168.0.0/16" # private network
+    
+  # Blocked networks/IPs
+  blocked_networks: []
+  
+  # Firewall rules
+  firewall:
+    default_policy: "deny"
+    allow_established: true
+    allow_related: true
+
+# API Security
+api:
+  # CORS settings
+  cors:
+    enabled: true
+    allowed_origins:
+      - "https://localhost:*"
+      - "https://127.0.0.1:*"
+    allowed_methods:
+      - "POST"
+      - "GET"
+    allowed_headers:
+      - "Authorization"
+      - "Content-Type"
+    max_age: 3600
+    
+  # Request limits
+  request_limits:
+    max_request_size_mb: 10
+    max_header_size_kb: 8
+    timeout_seconds: 30
+
+# Data Protection
+data_protection:
+  # PII handling
+  pii:
+    mask_in_logs: true
+    encryption_required: true
+    retention_policy_days: 365
+    
+  # Data classification
+  classification:
+    public: []
+    internal: ["search_queries", "notion_pages"]
+    confidential: ["email_content", "credentials"]
+    restricted: ["oauth_tokens", "encryption_keys"]
+
+# Compliance
+compliance:
+  # Standards
+  standards:
+    - "SOC2"
+    - "GDPR"
+    - "CCPA"
+    
+  # Data residency
+  data_residency:
+    allowed_regions: ["US", "EU"]
+    
+  # Audit requirements
+  audit_requirements:
+    log_all_access: true
+    log_data_modifications: true
+    log_administrative_actions: true
+
+# Emergency Procedures
+emergency:
+  # Circuit breaker
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 10
+    recovery_timeout_seconds: 60
+    
+  # Emergency contacts
+  contacts:
+    primary: "security-team@example.com"
+    secondary: "admin@example.com"
+    
+  # Auto-responses
+  auto_responses:
+    block_suspicious_ips: true
+    disable_compromised_accounts: true
+    alert_on_critical_events: true

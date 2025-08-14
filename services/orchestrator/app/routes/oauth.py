@@ -7,6 +7,7 @@ import os
 import uuid
 import json
 from urllib.parse import urlencode
+import httpx
 
 # Keep oauth namespace for status; email endpoints live at root too for now
 router = APIRouter(prefix="/oauth", tags=["oauth"])
@@ -26,17 +27,19 @@ from fastapi import APIRouter as _APR
 
 # Real Gmail integration
 from ..services.gmail_service import GmailService, GmailTokenStore
+from ..services.token_store import OAuthTokenStore
 from ..memory.sqlite_store import SQLiteMemory
 
 gmail_router = _APR(prefix="", tags=["gmail"])
 _gmail = GmailService()
 _token_store = GmailTokenStore(SQLiteMemory())
+_contacts_memory = SQLiteMemory()
 
 class GmailDraftRequest(BaseModel):
     account: Optional[str] = None
-    to: List[str]
-    subject: str
-    body_markdown: str
+    to: List[str] = []
+    subject: Optional[str] = ""
+    body_markdown: Optional[str] = ""
 
 def _require_account(req: GmailDraftRequest) -> str:
     if not req.account or not req.account.strip():
@@ -57,10 +60,68 @@ async def google_token_upsert(payload: GmailTokenUpsert) -> dict:
     if not payload.account or not isinstance(payload.token, dict):
         raise HTTPException(status_code=400, detail="account and token are required")
     try:
+        # Write via GmailTokenStore (backed by OAuthTokenStore)
         _id = await _token_store.save(payload.account, payload.token)
+        # Also persist directly with OAuthTokenStore for clarity (no-op if same)
+        OAuthTokenStore().save("google_gmail", payload.account, payload.token)
         return {"status": "ok", "id": _id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# New: Server-side code exchange helper (recommended)
+class GmailCodeExchange(BaseModel):
+    account: str  # sender email to bind the token to
+    code: str     # authorization code from Google redirect
+
+@router.post("/google/exchange")
+async def google_exchange_code(payload: GmailCodeExchange) -> dict:
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    scopes_env = os.getenv("GOOGLE_SCOPES") or ""
+    scopes = scopes_env.split()
+    if not client_id or not client_secret or not redirect_uri:
+        raise HTTPException(status_code=400, detail="Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI in env")
+
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": payload.code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(token_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    if resp.status_code != 200:
+        try:
+            err = resp.json()
+        except Exception:
+            err = {"text": resp.text}
+        raise HTTPException(status_code=resp.status_code, detail={"provider": "google", "error": err})
+
+    token = resp.json()
+    # Normalize and persist
+    token_dict = {
+        "token": token.get("access_token"),
+        "access_token": token.get("access_token"),
+        "refresh_token": token.get("refresh_token"),
+        "token_uri": token_url,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scopes": scopes or token.get("scope", "").split(),
+        "expires_in": token.get("expires_in"),
+        "token_type": token.get("token_type"),
+    }
+    try:
+        OAuthTokenStore().save("google_gmail", payload.account, token_dict)
+        # Also keep the legacy adapter in sync
+        await _token_store.save(payload.account, token_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "ok", "account": payload.account, "has_refresh": bool(token_dict.get("refresh_token"))}
 
 # Helper to generate a Google OAuth consent URL (manual flow – exchange must be done client-side or via a separate callback)
 @router.get("/google/authorize_url")
@@ -122,15 +183,24 @@ async def google_callback_legacy(code: Optional[str] = None, state: Optional[str
 async def gmail_draft(req: GmailDraftRequest) -> dict:
     print("📧 /gmail/draft", {"account": req.account, "to": req.to, "subject": req.subject})
     account = _require_account(req)
-    if not req.to or not isinstance(req.to, list):
-        raise HTTPException(status_code=400, detail="Missing recipients 'to'.")
-    if not req.subject:
-        raise HTTPException(status_code=400, detail="Missing 'subject'.")
-    if req.body_markdown is None:
-        raise HTTPException(status_code=400, detail="Missing 'body_markdown'.")
+    # Allow empty recipients/subject for drafts; coerce to safe defaults
+    to = req.to or []
+    subject = req.subject or ""
+    body = req.body_markdown if req.body_markdown is not None else ""
 
     try:
-        draft = await _gmail.create_draft(account=account, to=req.to, subject=req.subject, body_markdown=req.body_markdown)
+        draft = await _gmail.create_draft(account=account, to=to, subject=subject, body_markdown=body)
+        # Save contact memories for recipients
+        try:
+            for addr in to:
+                _contacts_memory.insert(
+                    kind="email_contact",
+                    text=addr,
+                    meta={"channel": "email", "address": addr},
+                    vector=None,
+                )
+        except Exception:
+            pass
         # Google returns {'id': 'draftId', 'message': {...}}; normalize id field
         draft_id = draft.get("id") or (draft.get("draft") or {}).get("id")
         return {"draft_id": draft_id or "unknown", "raw": draft}
@@ -151,6 +221,17 @@ async def gmail_send(req: GmailDraftRequest) -> dict:
 
     try:
         sent = await _gmail.send_email(account=account, to=req.to, subject=req.subject, body_markdown=req.body_markdown)
+        # Save contact memories for recipients
+        try:
+            for addr in req.to:
+                _contacts_memory.insert(
+                    kind="email_contact",
+                    text=addr,
+                    meta={"channel": "email", "address": addr},
+                    vector=None,
+                )
+        except Exception:
+            pass
         # Google returns {'id': 'msgId', 'threadId': '...', ...}
         msg_id = sent.get("id")
         return {"message_id": msg_id or "unknown", "raw": sent, "status": "sent" if msg_id else "unknown"}

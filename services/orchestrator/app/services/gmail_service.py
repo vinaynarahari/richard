@@ -11,51 +11,30 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ..memory.sqlite_store import SQLiteMemory
+from .token_store import OAuthTokenStore
 
 
 class GmailTokenStore:
     """
-    Persist OAuth tokens in SQLiteMemory (existing DB).
-    We store one row per (provider, account), where:
-      - provider: "google_gmail"
-      - key: account email (e.g., "me@example.com")
-      - text: JSON of token dict {access_token, refresh_token, token_uri, client_id, client_secret, scopes, expiry, ...}
+    Backward-compatible adapter that delegates to OAuthTokenStore(provider="google_gmail").
     """
 
-    def __init__(self, memory: Optional[SQLiteMemory] = None):
-        self.memory = memory or SQLiteMemory()
+    def __init__(self, memory: Optional[SQLiteMemory] = None, token_store: Optional[OAuthTokenStore] = None):
+        self._store = token_store or OAuthTokenStore()
 
     async def load(self, account: str) -> Optional[Dict[str, Any]]:
-        # Reuse memory search to find an exact match for this account
-        try:
-            # We store with kind="oauth_token" and provider in meta
-            results = await self.memory.search(account, top_k=20)
-        except Exception:
-            return None
-        # Find the newest record matching provider=google_gmail and key == account
-        for item, _score in results:
-            try:
-                if item.kind == "oauth_token" and item.meta and item.meta.get("provider") == "google_gmail":
-                    if (item.meta.get("account") or "").lower() == account.lower():
-                        # item.text holds the token json
-                        return json.loads(item.text)
-            except Exception:
-                continue
-        return None
+        # Keep signature async for compatibility, but call sync store
+        return self._store.load("google_gmail", account)
 
     async def save(self, account: str, token: Dict[str, Any]) -> str:
-        # Insert a new record (upsert semantics could be added later)
-        return await self.memory.insert_with_embedding(
-            kind="oauth_token",
-            text=json.dumps(token),
-            meta={"provider": "google_gmail", "account": account},
-        )
+        self._store.save("google_gmail", account, token)
+        return f"google_gmail:{account}"
 
 
 class GmailService:
     """
     Gmail REST API client that:
-      - loads/refreshes credentials from SQLite-backed store
+      - loads/refreshes credentials from OAuthTokenStore-backed persistence
       - sends email and creates drafts with body_markdown
     """
 
@@ -67,13 +46,9 @@ class GmailService:
         if not token_dict:
             raise RuntimeError(f"No stored OAuth token for account {account}. Connect the account first.")
 
-        # google.oauth2.credentials.Credentials expects standard fields
-        # Ensure required fields exist in token_dict (access_token/refresh_token/token_uri/client_id/client_secret/scopes)
         missing = [k for k in ("token", "access_token", "refresh_token", "token_uri", "client_id", "client_secret", "scopes") if k not in token_dict]
-        # Some implementations store access token as "access_token" not "token"
         token_value = token_dict.get("token") or token_dict.get("access_token")
         if missing and not token_value:
-            # Allow missing "token" if "access_token" provided
             pass
         if not token_value:
             token_value = token_dict.get("access_token")
@@ -90,16 +65,31 @@ class GmailService:
         )
         return creds
 
+    async def _maybe_persist_refreshed(self, account: str, creds: Credentials) -> None:
+        try:
+            # Credentials stores the new access token in creds.token and may update expiry
+            token_dict = {
+                "token": creds.token,
+                "access_token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": list(creds.scopes or []),
+                "expiry": creds.expiry.isoformat() if getattr(creds, "expiry", None) else None,
+            }
+            await self.token_store.save(account, token_dict)
+        except Exception:
+            # Non-fatal if persistence fails
+            pass
+
     @staticmethod
     def _mime_from_markdown(sender: str, to: List[str], subject: str, body_markdown: str) -> MIMEMultipart:
-        # Compose multipart/alternative with plain text and html (basic conversion)
         msg = MIMEMultipart("alternative")
         msg["To"] = ", ".join(to)
         msg["From"] = sender
         msg["Subject"] = subject
 
-        # Naive markdown to HTML fallback (could integrate a real md renderer later)
-        # Escape basic content; keep it simple
         text_part = MIMEText(body_markdown, "plain", "utf-8")
         html_content = (
             "<br/>".join(body_markdown.splitlines())
@@ -125,9 +115,10 @@ class GmailService:
             mime = self._mime_from_markdown(account, to, subject, body_markdown)
             msg = self._encode_message(mime)
             sent = service.users().messages().send(userId="me", body=msg).execute()
-            return sent  # contains id, threadId, labelIds...
+            # Persist latest tokens (e.g., if refresh occurred)
+            await self._maybe_persist_refreshed(account, creds)
+            return sent
         except HttpError as e:
-            # Surface Gmail error details
             try:
                 err_json = e.error_details if hasattr(e, "error_details") else e.content
             except Exception:
@@ -142,7 +133,9 @@ class GmailService:
             msg = self._encode_message(mime)
             draft_body = {"message": msg}
             draft = service.users().drafts().create(userId="me", body=draft_body).execute()
-            return draft  # contains id and message with id
+            # Persist latest tokens
+            await self._maybe_persist_refreshed(account, creds)
+            return draft
         except HttpError as e:
             try:
                 err_json = e.error_details if hasattr(e, "error_details") else e.content

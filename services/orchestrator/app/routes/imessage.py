@@ -4,11 +4,15 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import re as _re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, constr
 
+from ..memory.sqlite_store import SQLiteMemory
+
 router = APIRouter(prefix="/imessage", tags=["imessage"])
+_memory = SQLiteMemory()
 
 # Path to the Swift helper binary (debug build path)
 # __file__ -> services/orchestrator/app/routes/imessage.py
@@ -96,8 +100,12 @@ class SendByGroup(BaseModel):
     group: constr(strip_whitespace=True, min_length=1)
     body: constr(strip_whitespace=True, min_length=1)
 
+class SendByContact(BaseModel):
+    contact: constr(strip_whitespace=True, min_length=1)
+    body: constr(strip_whitespace=True, min_length=1)
 
-SendPayload = Union[SendByChatId, SendByRecipients, SendByGroup]
+
+SendPayload = Union[SendByChatId, SendByRecipients, SendByGroup, SendByContact]
 
 
 def _ensure_helper() -> None:
@@ -141,10 +149,43 @@ def _run_helper(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     # Normalize common error shape
     if data.get("status") == "error":
-        detail = data.get("error") or data.get("detail") or "Unknown error"
-        raise HTTPException(status_code=500, detail=f"Helper error: {detail}")
+        # Special-case multiple match scenario from helper to surface candidates upstream
+        if (data.get("detail") == "multiple_matches") and data.get("to"):
+            raise HTTPException(status_code=409, detail={"error": "multiple_matches", "candidates": data.get("to")})
+        # General helper error: keep structure for upstream handling
+        raise HTTPException(status_code=500, detail={
+            "error": data.get("error") or "helper_error",
+            "detail": data.get("detail") or "Unknown error",
+        })
 
     return data
+
+
+def _sanitize_query(q: str) -> str:
+    # Remove most non-word characters (keeps letters/numbers/space/@.+- for emails/handles), collapse spaces
+    s = _re.sub(r"[^A-Za-z0-9 @.+\-]", "", q)
+    return " ".join(s.split())
+
+
+def _select_preferred_handle(handles: List[str]) -> Optional[str]:
+    """Pick a single best handle. Prefer phone-number-like handles, else first available.
+    Accepts E.164-ish (+digits) or plain digits with length >=7.
+    """
+    if not handles:
+        return None
+    phone_like = []
+    for h in handles:
+        hs = (h or "").strip()
+        # common encodings sometimes include spaces; strip them
+        hs_compact = hs.replace(" ", "")
+        if _re.match(r"^\+?\d{7,}$", hs_compact):
+            phone_like.append(hs_compact)
+    if phone_like:
+        # Prefer those starting with '+' (E.164) if available
+        e164 = [p for p in phone_like if p.startswith("+")]
+        return (e164[0] if e164 else phone_like[0])
+    # Fallback: first handle as-is
+    return (handles[0] or "").strip()
 
 
 @router.post("/resolve", response_model=ResolveResponse)
@@ -173,7 +214,18 @@ def send(payload: SendPayload) -> Dict[str, Any]:
     if isinstance(payload, SendByChatId):
         req = {"action": "send", "chat_id": payload.chat_id, "body": payload.body}
         try:
-            return _run_helper(req)
+            resp = _run_helper(req)
+            # Save group/thread id usage
+            try:
+                _ = _memory.insert(
+                    kind="im_group_usage",
+                    text=f"chat:{payload.chat_id}",
+                    meta={"channel": "imessage", "chat_id": payload.chat_id},
+                    vector=None,
+                )
+            except Exception:
+                pass
+            return resp
         except HTTPException as e:
             # If helper failed due to non-scriptable chat id, try to resolve participants and send that way
             if e.status_code == 500 and "chat_id" in (e.detail or ""):
@@ -188,6 +240,15 @@ def send(payload: SendPayload) -> Dict[str, Any]:
                         for p in parts:
                             try:
                                 results.append(_run_helper({"action": "send", "to": [p], "body": payload.body}))
+                                try:
+                                    _ = _memory.insert(
+                                        kind="im_handle",
+                                        text=p,
+                                        meta={"channel": "imessage"},
+                                        vector=None,
+                                    )
+                                except Exception:
+                                    pass
                             except HTTPException as ie:
                                 results.append({"status": "error", "detail": ie.detail})
                         return {"status": "ok", "results": results}
@@ -201,46 +262,229 @@ def send(payload: SendPayload) -> Dict[str, Any]:
             results: List[Dict[str, Any]] = []
             for p in payload.to:
                 try:
-                    results.append(_run_helper({"action": "send", "to": [p], "body": payload.body}))
+                    res = _run_helper({"action": "send", "to": [p], "body": payload.body})
+                    results.append(res)
+                    try:
+                        _ = _memory.insert(
+                            kind="im_handle",
+                            text=p,
+                            meta={"channel": "imessage"},
+                            vector=None,
+                        )
+                    except Exception:
+                        pass
                 except HTTPException as e:
                     results.append({"status": "error", "detail": e.detail})
+            # If every attempt failed, surface error instead of silent OK
+            success_count = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "sent")
+            if success_count == 0:
+                raise HTTPException(status_code=500, detail="All recipient sends failed")
             return {"status": "ok", "results": results}
         # Single recipient path
         req = {"action": "send", "to": payload.to, "body": payload.body}
-        return _run_helper(req)
+        resp = _run_helper(req)
+        try:
+            _ = _memory.insert(
+                kind="im_handle",
+                text=payload.to[0],
+                meta={"channel": "imessage"},
+                vector=None,
+            )
+        except Exception:
+            pass
+        return resp
 
     if isinstance(payload, SendByGroup):
-        # Resolve group -> candidates
-        r = _run_helper({"action": "resolve", "query": payload.group})
+        # 0) Try direct display-name send first to target the existing thread
+        try:
+            resp = _run_helper({"action": "send_by_display_name", "display_name": payload.group, "body": payload.body})
+            try:
+                _ = _memory.insert(
+                    kind="im_group",
+                    text=f"group:{payload.group}",
+                    meta={"channel": "imessage", "display_name": payload.group},
+                    vector=None,
+                )
+            except Exception:
+                pass
+            return resp
+        except HTTPException:
+            pass
+
+        # 1) Then try DB resolver (FDA required)
+        q = payload.group
+        r = _run_helper({"action": "resolve", "query": q})
         candidates = r.get("results") or []
         if not candidates:
+            sq = _sanitize_query(q)
+            if sq and sq != q:
+                r = _run_helper({"action": "resolve", "query": sq})
+                candidates = r.get("results") or []
+        # 2) Fallback to AppleScript fuzzy resolver
+        if not candidates:
+            r = _run_helper({"action": "resolve_as", "query": q})
+            candidates = r.get("results") or []
+            if not candidates and sq and sq != q:
+                r = _run_helper({"action": "resolve_as", "query": sq})
+                candidates = r.get("results") or []
+        if not candidates:
             raise HTTPException(status_code=404, detail=f'Group "{payload.group}" not found')
+
         cand = candidates[0]
         chat_id = cand.get("chat_id")
-        participants = cand.get("participants") or []
+        display_name = cand.get("display_name") or payload.group
 
-        # If we have a scriptable chat id "*;-;*", try that first; else fall back to participants
+        # 3) Prefer sending by display name when available (use resolved display name)
+        try:
+            resp = _run_helper({"action": "send_by_display_name", "display_name": display_name, "body": payload.body})
+            return resp
+        except HTTPException:
+            pass
+
+        # 4) If chat id is scriptable, try it
         if isinstance(chat_id, str) and (";-;" in chat_id):
             try:
                 return _run_helper({"action": "send", "chat_id": chat_id, "body": payload.body})
             except HTTPException:
-                # Continue to participants fallback below
                 pass
 
-        if participants:
-            # Split into single-recipient sends to ensure delivery on restricted builds
+        # Strict mode: do not fall back to individual participants for group sends
+        raise HTTPException(status_code=404, detail=f'Group "{payload.group}" not found')
+
+    if isinstance(payload, SendByContact):
+        # 0a) Try Contacts app lookup for handles (phones/emails) and pick a preferred handle first
+        try:
+            data = _run_helper({"action": "lookup_contact_handles", "contact": payload.contact, "body": payload.body})
+            handles = [str(h) for h in (data.get("handles") or [])]
+            preferred = _select_preferred_handle(handles)
+            if preferred:
+                try:
+                    resp = _run_helper({"action": "send", "to": [preferred], "body": payload.body})
+                    try:
+                        _ = _memory.insert(
+                            kind="im_contact",
+                            text=f"contact:{payload.contact}",
+                            meta={"channel": "imessage", "name": payload.contact, "handle": preferred},
+                            vector=None,
+                        )
+                    except Exception:
+                        pass
+                    return resp
+                except HTTPException:
+                    pass
+        except Exception:
+            pass
+
+        # 0) Prefer buddy-id path first (most reliable for 1:1): find by display name -> sendToBuddyId
+        try:
+            data = _run_helper({"action": "send_by_contact_name", "contact": payload.contact, "body": payload.body})
+            try:
+                _ = _memory.insert(
+                    kind="im_contact",
+                    text=f"contact:{payload.contact}",
+                    meta={"channel": "imessage", "name": payload.contact},
+                    vector=None,
+                )
+            except Exception:
+                pass
+            return data
+        except HTTPException as e:
+            # If multiple matches, try to auto-pick a preferred handle from candidates instead of aborting
+            try:
+                detail = getattr(e, "detail", None)
+                if isinstance(detail, dict) and detail.get("candidates"):
+                    candidates = [str(c) for c in (detail.get("candidates") or [])]
+                    preferred = _select_preferred_handle(candidates)
+                    if preferred:
+                        try:
+                            resp = _run_helper({"action": "send", "to": [preferred], "body": payload.body})
+                            try:
+                                _ = _memory.insert(
+                                    kind="im_contact",
+                                    text=f"contact:{payload.contact}",
+                                    meta={"channel": "imessage", "name": payload.contact, "handle": preferred},
+                                    vector=None,
+                                )
+                            except Exception:
+                                pass
+                            return resp
+                        except HTTPException:
+                            pass
+            except Exception:
+                pass
+            # Fall through to other strategies
+
+        # 1) Try direct display-name send (restores legacy behavior that worked for some 1:1 threads)
+        try:
+            data = _run_helper({"action": "send_by_display_name", "display_name": payload.contact, "body": payload.body})
+            try:
+                _ = _memory.insert(
+                    kind="im_contact",
+                    text=f"contact:{payload.contact}",
+                    meta={"channel": "imessage", "name": payload.contact},
+                    vector=None,
+                )
+            except Exception:
+                pass
+            return data
+        except HTTPException:
+            pass
+
+        # 2) Resolve candidates and choose a single preferred handle (phone) to send directly
+        q = payload.contact
+        r = _run_helper({"action": "resolve", "query": q})
+        candidates = r.get("results") or []
+        if not candidates:
+            sq = _sanitize_query(q)
+            if sq and sq != q:
+                r = _run_helper({"action": "resolve", "query": sq})
+                candidates = r.get("results") or []
+        if not candidates:
+            r = _run_helper({"action": "resolve_as", "query": q})
+            candidates = r.get("results") or []
+            if not candidates and sq and sq != q:
+                r = _run_helper({"action": "resolve_as", "query": sq})
+                candidates = r.get("results") or []
+        if candidates:
+            # Prefer a 1:1 candidate (single participant) if available
+            cand: Dict[str, Any] = next((c for c in candidates if len(c.get("participants") or []) == 1), candidates[0])
+            parts = cand.get("participants") or []
+            preferred = _select_preferred_handle([str(p) for p in parts])
+            if preferred:
+                try:
+                    resp = _run_helper({"action": "send", "to": [preferred], "body": payload.body})
+                    try:
+                        _ = _memory.insert(
+                            kind="im_contact",
+                            text=f"contact:{payload.contact}",
+                            meta={"channel": "imessage", "name": payload.contact, "handle": preferred},
+                            vector=None,
+                        )
+                    except Exception:
+                        pass
+                    return resp
+                except HTTPException:
+                    pass
+            # Fallback: attempt each participant and aggregate
             results: List[Dict[str, Any]] = []
-            for p in participants:
+            for p in parts:
                 try:
                     results.append(_run_helper({"action": "send", "to": [p], "body": payload.body}))
                 except HTTPException as e:
                     results.append({"status": "error", "detail": e.detail})
+            # If every attempt failed, surface error instead of silent OK
+            success_count = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "sent")
+            if success_count == 0:
+                # As a last resort try chat-id path before giving up
+                chat_id = cand.get("chat_id")
+                if isinstance(chat_id, str):
+                    try:
+                        return _run_helper({"action": "send", "chat_id": chat_id, "body": payload.body})
+                    except HTTPException:
+                        pass
+                raise HTTPException(status_code=404, detail=f'Contact "{payload.contact}" not reachable')
             return {"status": "ok", "results": results}
-
-        # If no participants, try chat_id path anyway (may work on some builds)
-        if chat_id:
-            return _run_helper({"action": "send", "chat_id": chat_id, "body": payload.body})
-
-        raise HTTPException(status_code=500, detail="Resolver returned neither participants nor usable chat_id")
+        # No valid path
+        raise HTTPException(status_code=404, detail=f'Contact "{payload.contact}" not found')
 
     raise HTTPException(status_code=400, detail="Unsupported payload")

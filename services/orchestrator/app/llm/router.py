@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..llm.ollama_client import OllamaClient
+from .lmstudio_client import OpenAICompatClient  # NEW
 
 
 PERSONA_PATH = Path(__file__).resolve().parents[2] / "config" / "persona.yaml"
@@ -29,11 +30,11 @@ class Persona:
             # Default lightweight persona if config/persona.yaml missing
             return Persona(
                 name="Richard",
-                tone="friendly, concise, proactive",
+                tone="friendly, concise, proactive, like user",
                 style="clear bullet points for plans; short actionable summaries",
-                values=["privacy-first", "local-first", "helpful", "truthful"],
+                values=["privacy-first", "local-first", "helpful", "truthful", "like user", "like user's tone", "like user's style", "like user's values"],
                 constraints=["never leak secrets", "ask before performing destructive actions"],
-                system_prefix="You are Richard, a privacy-first local assistant that helps with email, calendar, and notes.",
+                system_prefix="You are Richard, a privacy-first local assistant that helps with email, calendar, and notes. Your tone, style, and values are liek V",
             )
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -64,48 +65,79 @@ class Persona:
 
 class LLMRouter:
     """
-    Routes requests to the appropriate local Ollama model based on task 'mode' or auto classification.
+    Routes requests to the appropriate local model provider based on task 'mode' or auto classification.
+    Providers: ollama (default), lmstudio (OpenAI-compatible)
     Modes:
-      - quick -> phi3:latest
-      - general -> gemma3n
-      - coding -> qwen3
-      - deep -> deepseek-r1
+      - quick -> phi4-mini or gemma3n (env override)
+      - general -> phi4-mini or gemma3n (env override)
+      - coding -> qwen3 (still fast)
+      - deep -> deepseek-r1 (slower, use when needed)
     """
 
     def __init__(self, ollama: Optional[OllamaClient] = None):
-        # Prefer OLLAMA_HOST if provided (matches menubar guidance), otherwise fallback to OLLAMA_BASE_URL, then default.
-        # Resolve Ollama base with preference:
-        # 1) OLLAMA_HOST (e.g., http://127.0.0.1:11435)
-        # 2) OLLAMA_BASE_URL (legacy)
-        # 3) default http://127.0.0.1:11434
-        base = os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"
-        # Normalize to http scheme and strip trailing slashes
-        if base.startswith("127.0.0.1:"):
-            base = "http://" + base
-        base = base.rstrip("/")
-        print(f"[LLMRouter] Using Ollama base: {base}")
-        self.ollama = ollama or OllamaClient(base_url=base)
+        provider = (os.getenv("LLM_PROVIDER") or "lmstudio").strip().lower()
+        self.provider = provider
+
+        if provider == "lmstudio":
+            base = os.getenv("LMSTUDIO_HOST", "http://127.0.0.1:1234").rstrip("/")
+            print(f"[LLMRouter] Using LM Studio base: {base}")
+            self.lmstudio = OpenAICompatClient(base_url=base)
+            self.ollama = None
+        else:
+            # Prefer OLLAMA_HOST if provided, otherwise fallback to OLLAMA_BASE_URL, then default.
+            base = os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"
+            if base.startswith("127.0.0.1:"):
+                base = "http://" + base
+            base = base.rstrip("/")
+            print(f"[LLMRouter] Using Ollama base: {base}")
+            self.ollama = ollama or OllamaClient(base_url=base)
+            self.lmstudio = None
         self.persona = Persona.load()
 
-        # default model mapping (env can override). Switch default to Gemma.
-        default_general = os.getenv("OLLAMA_MODEL", "gemma:latest")
+        # Allow environment override for defaults
+        if provider == "lmstudio":
+            general_default = os.getenv("RICHARD_MODEL_GENERAL", "mistralai/mistral-7b-instruct-v0.3")
+            quick_default = os.getenv("RICHARD_MODEL_QUICK", "mistralai/mistral-7b-instruct-v0.3")
+            coding_default = os.getenv("RICHARD_MODEL_CODING", "mistralai/mistral-7b-instruct-v0.3")
+            deep_default = os.getenv("RICHARD_MODEL_DEEP", "mistralai/mistral-7b-instruct-v0.3")
+        else:
+            general_default = os.getenv("RICHARD_MODEL_GENERAL", "gemma3n:e4b")
+            coding_default = os.getenv("RICHARD_MODEL_CODING", "qwen3:latest")
+            quick_default = os.getenv("RICHARD_MODEL_QUICK", "mistralai/mistral-7b-instruct-v0.3")
+            deep_default = os.getenv("RICHARD_MODEL_DEEP", "deepseek-r1:latest")
+
         self.model_map = {
-            "quick": default_general,
-            "general": default_general,
-            "coding": os.getenv("OLLAMA_MODEL_CODING", default_general),
-            "deep": os.getenv("OLLAMA_MODEL_DEEP", default_general),
+            "quick": quick_default,
+            "general": general_default,
+            "coding": coding_default,
+            "deep": deep_default,
+            "creative": general_default,
         }
+
+        self.available_models = [
+            general_default,
+            quick_default,
+            coding_default,
+            deep_default,
+        ]
+        self._resolved_default: Optional[str] = None
+
+    async def _ensure_default_model(self) -> str:
+        if self._resolved_default:
+            return self._resolved_default
+        self._resolved_default = self.model_map["general"]
+        print(f"[LLMRouter] Using installed model mapping: {self.model_map}")
+        return self._resolved_default
 
     def pick_model(self, mode: Optional[str], user_text: str) -> str:
         if mode in self.model_map:
-            return self.model_map[mode]  # explicit override
-        # Tiny heuristic if mode is not provided
+            return self.model_map[mode]
         lower = user_text.lower()
-        if any(k in lower for k in ("code", "python", "error", "stacktrace", "build", "compile", "swift")):
-            return self.model_map["coding"]
-        if any(k in lower for k in ("why", "prove", "step-by-step", "theory", "long", "deep")):
+        if any(k in lower for k in ("explain", "analyze", "why", "how", "prove", "step-by-step", "theory", "complex", "reasoning")):
             return self.model_map["deep"]
-        if len(user_text) < 120:
+        if any(k in lower for k in ("code", "python", "javascript", "swift", "error", "stacktrace", "build", "compile", "debug", "function", "class", "import")):
+            return self.model_map["coding"]
+        if len(user_text) < 120 or any(k in lower for k in ("hi", "hello", "yes", "no", "ok", "thanks", "bye")):
             return self.model_map["quick"]
         return self.model_map["general"]
 
@@ -117,7 +149,6 @@ class LLMRouter:
 
     @staticmethod
     def normalize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        # Ensure OpenAI-like shape
         norm: List[Dict[str, Any]] = []
         for m in messages:
             role = m.get("role", "user")
