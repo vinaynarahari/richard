@@ -170,35 +170,31 @@ class VoiceEngine:
             print(f"[VoiceEngine] Speaking: '{text}'")
             clean_text = self._clean_text_for_speech(text)
 
-            # Choose provider
-            provider = (self.config.tts_provider or "auto").lower()
-            audio_path: Optional[Path] = None
+            # Rate limiting - prevent too many TTS requests
+            if hasattr(self, '_last_tts_time'):
+                import time
+                time_since_last = time.time() - self._last_tts_time
+                if time_since_last < 1.0:  # Minimum 1 second between TTS calls
+                    print(f"[VoiceEngine] Rate limiting TTS - waiting {1.0 - time_since_last:.1f}s")
+                    await asyncio.sleep(1.0 - time_since_last)
+            
+            import time
+            self._last_tts_time = time.time()
 
-            if provider in ("auto", "elevenlabs"):
-                audio_path = await self._tts_elevenlabs(clean_text)
-                if audio_path is None and provider == "elevenlabs":
-                    print("[VoiceEngine] ElevenLabs requested but not available")
-                if audio_path:
-                    await self._play_file(audio_path)
-                    return
-
-            if provider in ("auto", "piper"):
-                audio_path = await self._tts_piper(clean_text)
-                if audio_path:
-                    await self._play_file(audio_path)
-                    return
-
-            # Fallback to macOS say
-            import subprocess
-            base_wpm = max(120, min(240, self.config.voice_rate_wpm))
-            rate = int(base_wpm * max(0.6, min(1.4, self.config.voice_speed)))
-            args = [
-                'say',
-                '-v', self.config.voice_name,
-                '-r', str(rate),
-                clean_text
-            ]
-            subprocess.run(args, check=False)
+            # Force ElevenLabs only - no fallbacks
+            api_key = os.getenv("ELEVENLABS_API_KEY")
+            voice_id = self.config.elevenlabs_voice_id or os.getenv("ELEVENLABS_VOICE_ID")
+            
+            if not api_key or not voice_id:
+                print("[VoiceEngine] ElevenLabs API key or voice ID not configured - skipping TTS")
+                return
+            
+            audio_path = await self._tts_elevenlabs(clean_text)
+            if audio_path:
+                await self._play_file(audio_path)
+            else:
+                print("[VoiceEngine] ElevenLabs TTS failed - no fallback")
+                
         except Exception as e:
             print(f"[VoiceEngine] TTS error: {e}")
 

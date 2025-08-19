@@ -486,3 +486,66 @@ class SearchToolInput(BaseModel):
         if v not in ['active', 'off']:
             raise ValueError('safe_search must be "active" or "off"')
         return v
+
+class BrowserToolInput(BaseModel):
+    """Validation model for Browser automation tool inputs."""
+    url: str = None
+    query: str = None
+    action: str = None
+    target: str = None
+    value: str = None
+    max_results: int = 10
+    timeout: int = 30
+    wait_for: str = None
+    screenshot: bool = False
+    
+    @validator('url')
+    def validate_url(cls, v):
+        if v is not None:
+            return SecurityValidator.validate_input(v, DataType.URL)
+        return v
+    
+    @validator('query')
+    def validate_query(cls, v):
+        if v is not None:
+            return SecurityValidator.validate_input(v, DataType.QUERY)
+        return v
+    
+    @validator('action')
+    def validate_action(cls, v):
+        if v is not None:
+            allowed_actions = ['click', 'type', 'select', 'hover', 'wait', 'navigate', 'scroll', 'screenshot']
+            if v.lower() not in allowed_actions:
+                raise ValueError(f'action must be one of: {allowed_actions}')
+            return v.lower()
+        return v
+    
+    @validator('target')
+    def validate_target(cls, v):
+        if v is not None:
+            return SecurityValidator.validate_input(v, DataType.STRING, max_length=1000)
+        return v
+    
+    @validator('value')
+    def validate_value(cls, v):
+        if v is not None:
+            return SecurityValidator.validate_input(v, DataType.STRING, max_length=5000)
+        return v
+    
+    @validator('max_results')
+    def validate_max_results(cls, v):
+        if v < 1 or v > 50:
+            raise ValueError('max_results must be between 1 and 50')
+        return v
+    
+    @validator('timeout')
+    def validate_timeout(cls, v):
+        if v < 1 or v > 300:
+            raise ValueError('timeout must be between 1 and 300 seconds')
+        return v
+    
+    @validator('wait_for')
+    def validate_wait_for(cls, v):
+        if v is not None:
+            return SecurityValidator.validate_input(v, DataType.STRING, max_length=500)
+        return v

@@ -12,9 +12,9 @@ import json
 import os
 from datetime import datetime
 
-from auth import SecurityConfig, TokenManager, RateLimiter, PermissionManager, AuditLogger
-from validation import SecurityValidator, ValidationError, DataType
-from crypto import SecureVault, SecureSession
+from .auth import SecurityConfig, TokenManager, RateLimiter, PermissionManager, AuditLogger
+from .validation import SecurityValidator, ValidationError, DataType
+from .crypto import SecureVault, SecureSession
 
 logger = logging.getLogger(__name__)
 

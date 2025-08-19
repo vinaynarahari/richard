@@ -132,17 +132,118 @@ def intent_to_tool(user_text: str) -> Optional[Dict[str, Any]]:
     text = user_text.strip()
     low = text.lower()
 
-    # NEW: Explicit web search intents ("search", "google", "look up", "find online")
+    # Comprehensive web search intent detection
     explicit_search = False
     try:
         search_patterns = [
-            r"\bsearch(?:\s+up)?\b",
-            r"\bgoogle\b",
+            # Direct search commands
+            r"\bsearch(?:\s+(?:for|up))?\b",
+            r"\bgoogle(?:\s+(?:for|search))?\b",
             r"\blook\s*up\b",
-            r"\bfind\s+(?:online|on\s+google|on\s+the\s+web)\b",
+            r"\bfind\s+(?:out\s+)?(?:about\s+)?(?:information|online|on\s+(?:google|the\s+web))?\b",
             r"\bsearch\s+the\s+web\b",
             r"\bweb\s+search\b",
-            r"\bcheck\s+(?:the\s+)?news\b",
+            r"\bcheck\s+(?:the\s+)?(?:news|online)\b",
+            
+            # Real-time/current information (likely beyond training data)
+            r"\b(?:current|latest|recent|today'?s|this\s+(?:week|month|year)'?s)\s+(?:price|news|information|data|results|reviews?|weather|population|status|events?)\b",
+            r"\b(?:2024|2025|2026)\b",  # Future years beyond training cutoff
+            r"\bthis\s+(?:year|month|week)\b",
+            r"\btoday'?s\b",
+            r"\brecently\b",
+            r"\blast\s+(?:week|month|year)\b",
+            
+            # Financial/market data (always changing)
+            r"\bstock\s+price\b",
+            r"\bshare\s+price\b", 
+            r"\bmarket\s+(?:price|value|cap|update)\b",
+            r"\bcrypto(?:currency)?\s+price\b",
+            r"\bbitcoin\s+price\b",
+            r"\bexchange\s+rate\b",
+            
+            # Current events and news
+            r"\bnews\s+(?:about|on|today)\b",
+            r"\bwhat\s+happened\s+(?:today|recently|this\s+week)\b",
+            r"\blatest\s+(?:updates?|developments?)\b",
+            r"\bbreaking\s+news\b",
+            
+            # Question patterns that typically need current data
+            r"\bwhat\s+is\s+the\s+(?:current|latest|today'?s)\b",
+            r"\bwhat\s+are\s+the\s+(?:current|latest|today'?s|reviews?)\b", 
+            r"\bhow\s+much\s+(?:is|does|costs?)\b",
+            r"\bwhen\s+(?:is|was|will)\s+.*(?:released?|happening|scheduled|start)\b",
+            r"\bwho\s+(?:is|won|will|are)\s+(?:the\s+)?(?:current|new|latest)\b",
+            r"\bwhere\s+(?:is|are|can|will)\b",
+            r"\bwhy\s+(?:is|are|did|does)\b",
+            r"\bhow\s+(?:to|can|do|does)\b",
+            
+            # Specific current data requests
+            r"\bweather\s+(?:in|for|today)\b",
+            r"\btemperature\s+in\b",
+            r"\bpopulation\s+of\b",
+            r"\breviews?\s+(?:for|of|about)\b",
+            r"\binformation\s+about\b",
+            r"\bstatus\s+of\b",
+            r"\bschedule\s+for\b",
+            
+            # Events and timing
+            r"\bwhen\s+(?:does|will|is)\s+.*(?:start|begin|happen|release|open|close)\b",
+            r"\bwhat\s+time\s+(?:does|will|is)\s+.*(?:start|begin|happen|open|close)\b",
+            r"\bwhen\s+is\s+the\s+next\b",
+            
+            # Products and services (likely to have recent updates)
+            r"\b(?:new|latest)\s+(?:version|model|release|update)\b",
+            r"\bspecifications?\s+(?:for|of)\b",
+            r"\bfeatures?\s+of\s+(?:new|latest)\b",
+            
+            # Company and business info (can change)
+            r"\b(?:ceo|founder|employees?|headquarters|revenue)\s+of\b",
+            r"\bcompany\s+(?:news|updates?|information)\b",
+            r"\bwho\s+(?:owns|runs|leads)\b",
+            
+            # Sports and entertainment (always changing)
+            r"\bscores?\s+(?:for|of|today)\b",
+            r"\bwho\s+won\b",
+            r"\bplayoffs?\b",
+            r"\bchampionship\b",
+            r"\btournament\b",
+            
+            # Technology and products
+            r"\brelease\s+date\b",
+            r"\bavailability\b",
+            r"\bcompatibility\b",
+            r"\bnew\s+features?\s+of\b",
+            r"\bfeatures?\s+of\s+(?:new|latest|current)\b",
+            
+            # Social and trending
+            r"\btrending\s+(?:on|in)\b",
+            r"\bwhat'?s\s+(?:trending|popular|viral)\b",
+            r"\bsocial\s+media\b",
+            
+            # Business and financial
+            r"\bearnings\s+(?:this|report|quarterly)\b",
+            r"\bquarterly\s+(?:results?|earnings)\b",
+            r"\bfinancial\s+results?\b",
+            
+            # World data and statistics  
+            r"\bworld\s+(?:population|statistics?)\b",
+            r"\bglobal\s+(?:data|statistics?|population)\b",
+            r"\bcurrent\s+(?:population|statistics?|data)\b",
+            
+            # Gaming and events
+            r"\bwhat\s+time\s+(?:does|is)\s+.*(?:start|begin|game|match|event)\b",
+            r"\bwhat\s+time\s+.*(?:start|begin)\b",
+            r"\btoday'?s\s+(?:game|match|event|schedule)\b",
+            r"\bthe\s+game\s+start\b",
+            
+            # Time and date queries (search instead of using get_time)
+            r"\bwhat\s+time\s+is\s+it\b",
+            r"\bcurrent\s+time\b",
+            r"\btime\s+now\b",
+            r"\bwhat\s+is\s+the\s+time\b",
+            r"\btime\s+in\s+\w+\b",
+            r"\btoday'?s\s+date\b",
+            r"\bwhat\s+day\s+is\s+it\b",
         ]
         for p in search_patterns:
             if _re.search(p, low):
@@ -152,42 +253,40 @@ def intent_to_tool(user_text: str) -> Optional[Dict[str, Any]]:
         explicit_search = False
 
     if explicit_search:
-        # If user asked to search but it's clearly a time/date request, return get_time
-        try:
-            if _re.search(r"\b(what\s+time|time\s+now|current\s+time|today'?s\s+date|what\s+is\s+the\s+date|what\s+day\s+is\s+it|\btime\b|\bdate\b)\b", low):
-                tz = None
-                m = _re.search(r"\bin\s+([A-Za-z_]+\/[A-Za-z_]+)\b", text)
-                if m:
-                    tz = m.group(1)
-                # Fallback: city name mapping
-                if not tz:
-                    m2 = _re.search(r"\bin\s+([A-Za-z][A-Za-z\-\s]+)\b", text, flags=_re.IGNORECASE)
-                    if m2:
-                        city = m2.group(1).strip().strip('?.!,')
-                        tz2 = _city_to_timezone(city)
-                        if tz2:
-                            tz = tz2
-                args: Dict[str, Any] = {}
-                if tz:
-                    args["timezone"] = tz
-                else:
-                    # Pass city hint if found (lets the tool try mapping)
-                    m3 = _re.search(r"\bin\s+([A-Za-z][A-Za-z\-\s]+)\b", text, flags=_re.IGNORECASE)
-                    if m3:
-                        args["city"] = m3.group(1).strip().strip('?.!,')
-                return {"name": "get_time", "args": args}
-        except Exception:
-            pass
-        # Otherwise strip trigger phrases to form the query
+        # Clean query for web search
         q = text
         try:
-            q = _re.sub(r"\b(search(?:\s+up)?|google|look\s*up|find\s+(?:online|on\s+google|on\s+the\s+web)|search\s+the\s+web|web\s+search)\b", " ", q, flags=_re.IGNORECASE)
-            q = _re.sub(r"\b(please|can\s+you|could\s+you|for\s+me|thanks?)\b", " ", q, flags=_re.IGNORECASE)
-            q = _re.sub(r"\s+", " ", q).strip().strip('?!.')
+            # Remove common search trigger phrases while preserving key content
+            removals = [
+                r"\b(?:can\s+you\s+)?(?:please\s+)?(?:search(?:\s+(?:for|up))?|look\s*up|find\s+(?:out\s+)?(?:about\s+)?(?:online|on\s+(?:the\s+web))|search\s+the\s+web|web\s+search|check\s+(?:the\s+)?(?:news|online))\s*",
+                r"\b(?:please|can\s+you|could\s+you|would\s+you|for\s+me|thanks?)\s*",
+                r"(?:if\s+(?:you\s+(?:have\s+to|can)|oyu\s+have\s+to)|search\s+it\s+up)\s*",
+            ]
+            
+            for removal_pattern in removals:
+                q = _re.sub(removal_pattern, " ", q, flags=_re.IGNORECASE)
+            
+            # Special handling for "google" - only remove if it's clearly a search verb, not the company name
+            google_patterns = [
+                r"\bgoogle\s+(?:stock|share|price|company|alphabet)\b",
+                r"\b(?:stock|share|price)\s+of\s+google\b",
+                r"\bgoogle'?s\s+(?:stock|share|price)\b"
+            ]
+            
+            is_google_query = any(_re.search(pattern, q, flags=_re.IGNORECASE) for pattern in google_patterns)
+            if not is_google_query:
+                q = _re.sub(r"\bgoogle\s*", " ", q, flags=_re.IGNORECASE)
+            
+            # Clean up whitespace and punctuation
+            q = _re.sub(r"\s+", " ", q).strip().strip('?!.,')
+            
+            # If query becomes too short, use original text
+            if len(q.strip()) < 3:
+                q = text
+                
         except Exception:
             q = text
-        if len(q) < 2:
-            q = text
+            
         return {"name": "web_search", "args": {"query": q, "max_results": 5}}
 
     # NEW: Time/date intents -> get_time
@@ -717,11 +816,13 @@ When asked to text/message someone (must be explicit like "send a message" or "t
 Only use function calls for explicit action requests. Otherwise, just chat normally.
 
 Web browsing policy:
-- You can use two browsing tools when helpful: web_search(query, max_results) and web_fetch(url, max_chars).
-- Use them for up-to-date or factual queries (e.g., "current", "today", "latest", prices, release dates, news), or when you are uncertain.
+- You MUST use web_search(query, max_results) for any information that could be current, recent, or beyond your training data.
+- ALWAYS search for: current events, prices, news, weather, recent releases, 2024+ information, company updates, sports scores, market data.
+- Use web_search for ANY question where you're uncertain or the information might have changed recently.
+- Your knowledge cutoff is early 2024 - assume anything about "today", "current", "latest", "recent" needs web search.
 - Do NOT invent tools. Only use the declared tools.
 - Prefer: web_search to find sources; then web_fetch on 1–2 promising links; then summarize with citations (include the URLs in text).
-- Avoid unnecessary browsing for general knowledge you are confident about.
+- When in doubt, search. It's better to search unnecessarily than to provide outdated information.
 """
         
         # Apply personality learning to system prompt
@@ -781,6 +882,36 @@ Web browsing policy:
                                 "body": {"type": "string"},
                         },
                         "required": ["body"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_recent_messages",
+                    "description": "Get recent messages from the Messages app. Can filter by contact name or phone number.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "hours": {"type": "integer", "description": "Number of hours to look back (default: 24)", "default": 24},
+                            "contact": {"type": "string", "description": "Optional: filter by contact name or phone number"}
+                        },
+                        "required": []
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_contacts",
+                    "description": "Search for contacts by name, phone number, or email. Returns contact information including phone numbers.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query (name, phone number, or email)"},
+                            "max_results": {"type": "integer", "description": "Maximum number of results to return (default: 5)", "default": 5}
+                        },
+                        "required": ["query"]
                     },
                 },
             },
@@ -903,8 +1034,13 @@ Web browsing policy:
             # Otherwise strip trigger phrases to form the query
             q = text
             try:
-                q = _re.sub(r"\b(search(?:\s+up)?|google|look\s*up|find\s+(?:online|on\s+google|on\s+the\s+web)|search\s+the\s+web|web\s+search)\b", " ", q, flags=_re.IGNORECASE)
-                q = _re.sub(r"\b(please|can\s+you|could\s+you|for\s+me|thanks?)\b", " ", q, flags=_re.IGNORECASE)
+                # More careful query cleaning - preserve main content words
+                q = _re.sub(r"\b(search(?:\s+up)?|look\s*up|find\s+(?:online|on\s+google|on\s+the\s+web)|search\s+the\s+web|web\s+search)\s*", " ", q, flags=_re.IGNORECASE)
+                q = _re.sub(r"\b(please|can\s+you|could\s+you|for\s+me|thanks?)\s*", " ", q, flags=_re.IGNORECASE)
+                q = _re.sub(r"\s*(if\s+(?:you\s+have\s+to|oyu\s+have\s+to))\s*", " ", q, flags=_re.IGNORECASE)
+                # Don't strip "google" if it appears to be part of the search target (like "google stock price")
+                if not _re.search(r"\bgoogle\s+(?:stock|share|price)", q, flags=_re.IGNORECASE):
+                    q = _re.sub(r"\bgoogle\s*", " ", q, flags=_re.IGNORECASE)
                 q = _re.sub(r"\s+", " ", q).strip().strip('?!.')
             except Exception:
                 q = text
@@ -1303,28 +1439,200 @@ Web browsing policy:
         if name == "send_imessage":
             try:
                 import httpx
-                payload = {}
+                
+                # Extract recipient and message from args
+                recipient = None
+                message = args.get("body") or args.get("message")
+                
+                # Clean up malformed quotes in message
+                if message and isinstance(message, str):
+                    # Remove trailing quotes that might be from parsing errors
+                    message = message.rstrip('"\'')
+                    # Remove leading quotes if they exist
+                    message = message.lstrip('"\'')
+                
                 if args.get("group"):
-                    payload = {"group": args.get("group"), "body": args.get("body")}
+                    recipient = args.get("group")
                 elif args.get("contact"):
-                    payload = {"contact": args.get("contact"), "body": args.get("body")}
+                    recipient = args.get("contact")
                 elif args.get("to"):
-                    payload = {"to": args.get("to"), "body": args.get("body")}
+                    recipient = args.get("to")
                 elif args.get("chat_id"):
-                    payload = {"chat_id": args.get("chat_id"), "body": args.get("body")}
+                    recipient = args.get("chat_id")
                 else:
-                    return "Text failed: missing group/to/chat_id."
-                if not payload.get("body"):
-                    return "Text failed: missing body."
+                    return "Text failed: missing recipient (group/to/contact/chat_id)."
+                
+                # Clean up recipient too
+                if recipient and isinstance(recipient, str):
+                    recipient = recipient.strip('"\'')
+                
+                if not message:
+                    return "Text failed: missing message body."
+
+                # Smart recipient resolution: handle groups vs contacts properly
+                original_recipient = recipient
+                
+                # If this is a group request, use the iMessage send endpoint with group parameter
+                if args.get("group"):
+                    print(f"[imessage.send] Sending to group '{recipient}'...")
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            payload = {"group": recipient, "body": message}
+                            r = await client.post(f"{BASE}/imessage/send", json=payload)
+                            if r.status_code == 200:
+                                result = r.json()
+                                return f"Message sent to group '{recipient}' successfully."
+                            else:
+                                error_detail = r.json().get("detail", "Unknown error")
+                                return f"Failed to send to group '{recipient}': {error_detail}"
+                    except Exception as e:
+                        print(f"[imessage.send] Group send error: {e}")
+                        return f"Failed to send to group '{recipient}': {e}"
+                
+                # If this is a contact request and looks like a name (not a phone number), resolve it
+                elif args.get("contact") and recipient and not re.match(r'^[\+]?[0-9\-\(\)\s]+$', recipient):
+                    print(f"[imessage.send] Sending to contact '{recipient}'...")
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            payload = {"contact": recipient, "body": message}
+                            r = await client.post(f"{BASE}/imessage/send", json=payload)
+                            if r.status_code == 200:
+                                result = r.json()
+                                return f"Message sent to contact '{recipient}' successfully."
+                            else:
+                                error_detail = r.json().get("detail", "Unknown error")
+                                return f"Failed to send to contact '{recipient}': {error_detail}"
+                    except Exception as e:
+                        print(f"[imessage.send] Contact send error: {e}")
+                        return f"Failed to send to contact '{recipient}': {e}"
+                
+                # Fallback: treat as direct phone number/handle or use old contact lookup
+                elif recipient and not re.match(r'^[\+]?[0-9\-\(\)\s]+$', recipient):
+                    # This looks like a contact name, not a phone number - let's look it up using our enhanced fuzzy search
+                    print(f"[imessage.send] '{recipient}' looks like a contact name, searching with fuzzy matching...")
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as contact_client:
+                            # Use our enhanced contacts search endpoint
+                            contact_r = await contact_client.get(f"{BASE}/contacts/search?q={recipient}&max_results=3")
+                            if contact_r.status_code == 200:
+                                contacts = contact_r.json()
+                                
+                                if contacts and len(contacts) > 0:
+                                    found_contact = contacts[0]  # Best match
+                                    
+                                    # Check if this is a suggestion response
+                                    if found_contact.get('meta', {}).get('type') == 'suggestion':
+                                        suggestions = found_contact.get('meta', {}).get('suggestions', [])
+                                        return f"No exact match for '{original_recipient}'. Did you mean: {', '.join(suggestions)}?"
+                                    
+                                    phone = found_contact.get('primary_phone')
+                                    similarity_score = found_contact.get('meta', {}).get('similarity_score', 0)
+                                    
+                                    if phone:
+                                        print(f"[imessage.send] Resolved '{recipient}' to '{found_contact['name']}' with phone {phone} (similarity: {similarity_score})")
+                                        recipient = phone
+                                        
+                                        # If similarity is low, ask for confirmation
+                                        if similarity_score < 0.7:
+                                            return f"Did you mean '{found_contact['name']}'? If so, say 'send a message to {found_contact['name']} saying {message}'"
+                                    else:
+                                        print(f"[imessage.send] Found contact '{found_contact.get('name')}' but no phone number")
+                                        return f"Found contact '{found_contact.get('name')}' but they don't have a phone number on file."
+                                else:
+                                    print(f"[imessage.send] No contact found matching '{original_recipient}'")
+                                    return f"No contact found matching '{original_recipient}'. Please provide a phone number or try a different spelling."
+                            else:
+                                print(f"[imessage.send] Contact search failed with status {contact_r.status_code}")
+                    except Exception as contact_error:
+                        print(f"[imessage.send] Contact lookup error: {contact_error}")
+                        # Continue with original recipient if contact lookup fails
+
+                # Use the MCP endpoint for messaging
+                payload = {
+                    "recipient": recipient,
+                    "message": message
+                }
+                
+                print(f"[imessage.send] Cleaned args - recipient: '{recipient}', message: '{message}'")
+                print(f"[imessage.send] Payload: {json.dumps(payload)}")
 
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    r = await client.post("http://127.0.0.1:5273/imessage/send", json=payload)
-                    print(f"[imessage.send] POST /imessage/send -> {r.status_code}")
+                    r = await client.post(f"{BASE}/mcp/mac-messages/send_message", json=payload)
+                    print(f"[imessage.send] POST {BASE}/mcp/mac-messages/send_message -> {r.status_code}")
                     r.raise_for_status()
                     data = r.json()
-                    return f"Message sent: {data.get('detail') or 'ok'}"
+                    print(f"[imessage.send] Response data: {json.dumps(data)}")
+                    return f"Message sent to {recipient}: {data.get('message', 'ok')}"
             except Exception as e:
+                print(f"[imessage.send] error={e}")
                 return f"Text failed: {e}"
+
+        if name == "get_recent_messages":
+            try:
+                import httpx
+                
+                # Build payload for getting recent messages
+                payload = {
+                    "hours": int(args.get("hours", 24)),
+                    "contact": args.get("contact")
+                }
+
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    r = await client.post(f"{BASE}/mcp/mac-messages/get_recent_messages", json=payload)
+                    print(f"[imessage.get] POST {BASE}/mcp/mac-messages/get_recent_messages -> {r.status_code}")
+                    r.raise_for_status()
+                    data = r.json()
+                    
+                    messages = data.get('messages', [])
+                    if not messages:
+                        return "No recent messages found."
+                    
+                    # Format the messages for display
+                    result_lines = [f"Found {len(messages)} recent messages:"]
+                    for msg in messages[:10]:  # Limit to 10 most recent
+                        sender = msg.get('sender', 'Unknown')
+                        message_text = msg.get('message', '')
+                        timestamp = msg.get('timestamp', '')
+                        result_lines.append(f"• {sender}: {message_text[:100]}{'...' if len(message_text) > 100 else ''} ({timestamp})")
+                    
+                    return "\n".join(result_lines)
+            except Exception as e:
+                print(f"[imessage.get] error={e}")
+                return f"Failed to get messages: {e}"
+
+        if name == "search_contacts":
+            try:
+                import httpx
+                
+                # Build payload for contact search
+                payload = {
+                    "query": args.get("query", ""),
+                    "max_results": int(args.get("max_results", 5))
+                }
+
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    r = await client.post(f"{BASE}/mcp/imcp/search_contacts", json=payload)
+                    print(f"[contact.search] POST {BASE}/mcp/imcp/search_contacts -> {r.status_code}")
+                    r.raise_for_status()
+                    data = r.json()
+                    
+                    contacts = data.get('contacts', [])
+                    if not contacts:
+                        return f"No contacts found matching '{payload['query']}'."
+                    
+                    # Format the contacts for display
+                    result_lines = [f"Found {len(contacts)} contact(s) matching '{payload['query']}':"]
+                    for contact in contacts:
+                        name = contact.get('name', 'Unknown')
+                        phone = contact.get('primary_phone', 'No phone')
+                        emails = contact.get('emails', [])
+                        email_str = f", Email: {emails[0]}" if emails else ""
+                        result_lines.append(f"• {name}: {phone}{email_str}")
+                    
+                    return "\n".join(result_lines)
+            except Exception as e:
+                print(f"[contact.search] error={e}")
+                return f"Failed to search contacts: {e}"
 
         if name == "create_calendar_event":
             try:
@@ -1359,14 +1667,91 @@ Web browsing policy:
         if name == "web_search":
             try:
                 import httpx
-                payload = {"q": args.get("query"), "max_results": int(args.get("max_results", 5) or 5)}
+                query = args.get("query")
+                max_sources = min(int(args.get("max_results", 3) or 3), 5)  # Cap at 5 for performance
+                
+                # Try web-researcher MCP first (more reliable)
+                try:
+                    # Call web-researcher MCP server
+                    mcp_payload = {
+                        "question": query,
+                        "max_sources": max_sources
+                    }
+                    
+                    # Use the web-researcher MCP server running on a different port
+                    async with httpx.AsyncClient(timeout=45.0) as client:
+                        # First try to call the web-researcher MCP tool
+                        r = await client.post(f"{BASE}/mcp/web-researcher/research_question", json=mcp_payload)
+                        
+                        if r.status_code == 200:
+                            result_data = r.json()
+                            if result_data.get("status") == "success":
+                                return result_data.get("answer", "No answer found")
+                            else:
+                                print(f"[web_search] MCP research failed: {result_data.get('status')}")
+                                # Fall through to backup method
+                        else:
+                            print(f"[web_search] MCP server unavailable: {r.status_code}")
+                            # Fall through to backup method
+                            
+                except Exception as mcp_error:
+                    print(f"[web_search] MCP fallback: {mcp_error}")
+                    # Fall through to backup method
+                
+                # Fallback: Use existing DuckDuckGo search with improved error handling
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    r = await client.get(f"{BASE}/search/web", params=payload)
-                    r.raise_for_status()
-                    data = r.json()
-                # Return top results formatted for the model
-                lines = [f"- {item.get('title')}: {item.get('url')}" + (f" — {item.get('snippet')}" if item.get('snippet') else "") for item in data]
-                return "Search results:\n" + "\n".join(lines[:payload["max_results"]])
+                    # Try the existing search endpoint but with retries
+                    for attempt in range(2):  # 2 attempts
+                        try:
+                            payload = {"q": query, "max_results": max_sources}
+                            r = await client.get(f"{BASE}/search/web", params=payload)
+                            
+                            if r.status_code == 429:  # Rate limited
+                                print(f"[web_search] Rate limited, attempt {attempt + 1}")
+                                if attempt == 0:
+                                    await asyncio.sleep(1)  # Wait 1 second before retry
+                                    continue
+                                else:
+                                    # Final fallback for stock queries
+                                    if any(word in query.lower() for word in ['google', 'stock', 'price', 'alphabet']):
+                                        return (
+                                            "Unable to fetch current stock price due to rate limits. "
+                                            "For real-time Google (Alphabet Inc.) stock prices, please check:\n"
+                                            "• Google Finance: https://www.google.com/finance/quote/GOOGL:NASDAQ\n"
+                                            "• Yahoo Finance: https://finance.yahoo.com/quote/GOOGL\n"
+                                            "• MarketWatch: https://www.marketwatch.com/investing/stock/googl"
+                                        )
+                                    else:
+                                        return f"Search temporarily unavailable due to rate limits. Please try again in a moment."
+                            
+                            r.raise_for_status()
+                            search_data = r.json()
+                            
+                            if not search_data:
+                                return f"No search results found for: {query}"
+                            
+                            # Return basic search results
+                            lines = []
+                            for item in search_data[:max_sources]:
+                                title = item.get('title', 'Untitled')
+                                url = item.get('url', '')
+                                snippet = item.get('snippet', '')
+                                if url:
+                                    line = f"• {title}: {url}"
+                                    if snippet:
+                                        line += f" — {snippet[:100]}{'...' if len(snippet) > 100 else ''}"
+                                    lines.append(line)
+                            
+                            if lines:
+                                return f"Search results for '{query}':\n" + "\n".join(lines)
+                            else:
+                                return f"No useful results found for: {query}"
+                                
+                        except Exception as search_error:
+                            print(f"[web_search] Search attempt {attempt + 1} failed: {search_error}")
+                            if attempt == 1:  # Last attempt
+                                raise search_error
+                                
             except Exception as e:
                 return f"Web search failed: {e}"
 

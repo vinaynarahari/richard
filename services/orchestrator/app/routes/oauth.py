@@ -77,11 +77,11 @@ class GmailCodeExchange(BaseModel):
 async def google_exchange_code(payload: GmailCodeExchange) -> dict:
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or "http://127.0.0.1:8000/callback/google"  # Default to port 8000
     scopes_env = os.getenv("GOOGLE_SCOPES") or ""
     scopes = scopes_env.split()
-    if not client_id or not client_secret or not redirect_uri:
-        raise HTTPException(status_code=400, detail="Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI in env")
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in env")
 
     token_url = "https://oauth2.googleapis.com/token"
     data = {
@@ -123,11 +123,65 @@ async def google_exchange_code(payload: GmailCodeExchange) -> dict:
 
     return {"status": "ok", "account": payload.account, "has_refresh": bool(token_dict.get("refresh_token"))}
 
+# Manual token refresh endpoint
+class GmailRefreshRequest(BaseModel):
+    account: str
+
+@router.post("/google/refresh")
+async def google_refresh_token(payload: GmailRefreshRequest) -> dict:
+    """
+    Manually refresh OAuth token for a Gmail account using stored refresh token.
+    """
+    try:
+        from ..services.gmail_service import GmailService, GmailTokenStore
+        from google.auth.transport.requests import Request
+        
+        # Load existing token
+        token_store = GmailTokenStore()
+        token_dict = await token_store.load(payload.account)
+        if not token_dict:
+            raise HTTPException(status_code=404, detail=f"No stored token for account {payload.account}")
+        
+        if not token_dict.get("refresh_token"):
+            raise HTTPException(status_code=400, detail=f"No refresh token available for account {payload.account}. Please re-authenticate.")
+        
+        # Create credentials and refresh
+        from google.oauth2.credentials import Credentials
+        creds = Credentials(
+            token=token_dict.get("token") or token_dict.get("access_token"),
+            refresh_token=token_dict.get("refresh_token"),
+            token_uri=token_dict.get("token_uri"),
+            client_id=token_dict.get("client_id"),
+            client_secret=token_dict.get("client_secret"),
+            scopes=token_dict.get("scopes"),
+        )
+        
+        # Refresh the token
+        creds.refresh(Request())
+        
+        # Save refreshed token
+        refreshed_token = {
+            "token": creds.token,
+            "access_token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
+            "scopes": list(creds.scopes or []),
+            "expiry": creds.expiry.isoformat() if getattr(creds, "expiry", None) else None,
+        }
+        await token_store.save(payload.account, refreshed_token)
+        
+        return {"status": "ok", "account": payload.account, "refreshed": True, "expiry": refreshed_token.get("expiry")}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Token refresh failed: {str(e)}")
+
 # Helper to generate a Google OAuth consent URL (manual flow – exchange must be done client-side or via a separate callback)
 @router.get("/google/authorize_url")
 async def google_authorize_url() -> dict:
     client_id = os.getenv("GOOGLE_CLIENT_ID")
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or "http://127.0.0.1:8000/callback/google"  # Default to port 8000
     # Accept scopes from env or fallback to a safe, full Gmail scope set if env is misconfigured.
     scopes_str = os.getenv("GOOGLE_SCOPES") or ""
     scopes = scopes_str.split()
@@ -140,8 +194,8 @@ async def google_authorize_url() -> dict:
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
         ]
-    if not client_id or not redirect_uri or not scopes:
-        raise HTTPException(status_code=400, detail="Missing GOOGLE_CLIENT_ID / GOOGLE_REDIRECT_URI / GOOGLE_SCOPES in env")
+    if not client_id or not scopes:
+        raise HTTPException(status_code=400, detail="Missing GOOGLE_CLIENT_ID / GOOGLE_SCOPES in env")
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,

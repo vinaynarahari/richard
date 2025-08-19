@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "python",
+      "args": ["gmail/server.py"],
+      "cwd": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers",
+      "env": {
+        "PYTHONPATH": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers"
+      }
+    },
+    "notion": {
+      "command": "python", 
+      "args": ["notion/server.py"],
+      "cwd": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers",
+      "env": {
+        "PYTHONPATH": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers"
+      }
+    },
+    "google-search": {
+      "command": "python",
+      "args": ["google-search/server.py"], 
+      "cwd": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers",
+      "env": {
+        "PYTHONPATH": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers"
+      }
+    },
+    "playwright-search": {
+      "command": "node",
+      "args": ["cli.js", "--headless", "--browser", "chromium"],
+      "cwd": "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers/playwright-search",
+      "env": {}
+    }
+  }
+}

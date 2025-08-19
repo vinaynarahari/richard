@@ -31,6 +31,96 @@ _memory = SQLiteMemory()
 # 3) Fallback to CWD-based guess if needed
 import os as _os
 
+def _find_group_chat_with_enhanced_fuzzy_matching(group_name: str) -> Optional[Dict[str, Any]]:
+    """Find group chat using enhanced fuzzy matching from mac_messages_mcp"""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, '/Users/vinaynarahari/Desktop/Github/richard/mac_messages_mcp')
+        from mac_messages_mcp.messages import find_group_chat_by_name
+        
+        print(f"[imessage.send] '{group_name}' looks like a group chat name, searching with fuzzy matching...")
+        
+        # Use enhanced fuzzy matching for group chats
+        group_chats = find_group_chat_by_name(group_name, max_results=3)
+        
+        if not group_chats:
+            print(f"[imessage.send] No group chat found matching '{group_name}'")
+            return None
+        
+        if len(group_chats) == 1:
+            # Single match - use it
+            group_chat = group_chats[0]
+            print(f"[imessage.send] Found single group chat: {group_chat['name']} ({group_chat.get('confidence', 'unknown')} confidence)")
+            return group_chat
+        
+        # Multiple matches - choose the highest confidence one
+        best_group = group_chats[0]  # Already sorted by score
+        
+        # If the best match has very high confidence, use it automatically
+        if best_group.get('confidence') == 'very_high' or best_group.get('score', 0) >= 0.9:
+            print(f"[imessage.send] Auto-selected high confidence group: {best_group['name']} ({best_group.get('confidence', 'unknown')} confidence)")
+            return best_group
+        
+        # Otherwise, log the ambiguity but still use the best match
+        print(f"[imessage.send] Multiple group chats found for '{group_name}', using best match: {best_group['name']} ({best_group.get('confidence', 'unknown')} confidence)")
+        for i, group_chat in enumerate(group_chats[:3], 1):
+            print(f"[imessage.send]   {i}. {group_chat['name']} - {group_chat.get('match_type', 'unknown')} match, {group_chat.get('confidence', 'unknown')} confidence")
+        
+        return best_group
+        
+    except ImportError as e:
+        print(f"[imessage.send] Enhanced group chat fuzzy matching not available: {e}")
+        return None
+    except Exception as e:
+        print(f"[imessage.send] Enhanced group chat fuzzy matching failed: {e}")
+        return None
+
+def _find_contact_with_enhanced_fuzzy_matching(contact_name: str) -> Optional[Dict[str, Any]]:
+    """Find contact using enhanced fuzzy matching from mac_messages_mcp"""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, '/Users/vinaynarahari/Desktop/Github/richard/mac_messages_mcp')
+        from mac_messages_mcp.messages import find_contact_by_name
+        
+        print(f"[imessage.send] '{contact_name}' looks like a contact name, searching with fuzzy matching...")
+        
+        # Use enhanced fuzzy matching
+        contacts = find_contact_by_name(contact_name, max_results=3)
+        
+        if not contacts:
+            print(f"[imessage.send] No contact found matching '{contact_name}'")
+            return None
+        
+        if len(contacts) == 1:
+            # Single match - use it
+            contact = contacts[0]
+            print(f"[imessage.send] Found single contact: {contact['name']} ({contact.get('confidence', 'unknown')} confidence)")
+            return contact
+        
+        # Multiple matches - choose the highest confidence one
+        best_contact = contacts[0]  # Already sorted by score
+        
+        # If the best match has very high confidence, use it automatically
+        if best_contact.get('confidence') == 'very_high' or best_contact.get('score', 0) >= 0.9:
+            print(f"[imessage.send] Auto-selected high confidence match: {best_contact['name']} ({best_contact.get('confidence', 'unknown')} confidence)")
+            return best_contact
+        
+        # Otherwise, log the ambiguity but still use the best match
+        print(f"[imessage.send] Multiple contacts found for '{contact_name}', using best match: {best_contact['name']} ({best_contact.get('confidence', 'unknown')} confidence)")
+        for i, contact in enumerate(contacts[:3], 1):
+            print(f"[imessage.send]   {i}. {contact['name']} - {contact.get('match_type', 'unknown')} match, {contact.get('confidence', 'unknown')} confidence")
+        
+        return best_contact
+        
+    except ImportError as e:
+        print(f"[imessage.send] Enhanced fuzzy matching not available: {e}")
+        return None
+    except Exception as e:
+        print(f"[imessage.send] Enhanced fuzzy matching failed: {e}")
+        return None
+
 def _compute_helper_path() -> Path:
     env_path = _os.getenv("IMESSAGE_HELPER")
     if env_path:
@@ -105,7 +195,7 @@ class SendByContact(BaseModel):
     body: constr(strip_whitespace=True, min_length=1)
 
 
-SendPayload = Union[SendByChatId, SendByRecipients, SendByGroup, SendByContact]
+SendPayload = Union[SendByGroup, SendByContact, SendByChatId, SendByRecipients]
 
 
 def _ensure_helper() -> None:
@@ -210,6 +300,17 @@ def resolve(req: ResolveRequest) -> ResolveResponse:
 
 @router.post("/send")
 def send(payload: SendPayload) -> Dict[str, Any]:
+    # Explicit routing based on payload fields to ensure correct handling
+    # This prevents Union type resolution issues in different environments
+    if hasattr(payload, 'group') and getattr(payload, 'group', None):
+        # Force group chat handling even if Union resolution is incorrect
+        if not isinstance(payload, SendByGroup):
+            payload = SendByGroup(group=payload.group, body=payload.body)
+    elif hasattr(payload, 'contact') and getattr(payload, 'contact', None):
+        # Force contact handling even if Union resolution is incorrect  
+        if not isinstance(payload, SendByContact):
+            payload = SendByContact(contact=payload.contact, body=payload.body)
+    
     # Three forms: by chat_id, by recipients, or by group (server resolves then sends)
     if isinstance(payload, SendByChatId):
         req = {"action": "send", "chat_id": payload.chat_id, "body": payload.body}
@@ -295,7 +396,33 @@ def send(payload: SendPayload) -> Dict[str, Any]:
         return resp
 
     if isinstance(payload, SendByGroup):
-        # 0) Try direct display-name send first to target the existing thread
+        # 0) Try enhanced fuzzy group chat matching first
+        try:
+            enhanced_group = _find_group_chat_with_enhanced_fuzzy_matching(payload.group)
+            if enhanced_group:
+                group_name = enhanced_group['name']
+                resp = _run_helper({"action": "send_by_display_name", "display_name": group_name, "body": payload.body})
+                try:
+                    _ = _memory.insert(
+                        kind="im_group",
+                        text=f"group:{payload.group}",
+                        meta={
+                            "channel": "imessage", 
+                            "display_name": group_name,
+                            "match_type": enhanced_group.get('match_type', 'fuzzy'),
+                            "confidence": enhanced_group.get('confidence', 'unknown'),
+                            "source": "enhanced_group_fuzzy_matching"
+                        },
+                        vector=None,
+                    )
+                except Exception:
+                    pass
+                return resp
+        except Exception as e:
+            print(f"Enhanced group fuzzy matching failed: {e}")
+            pass
+        
+        # 1) Try direct display-name send with exact name (fallback)
         try:
             resp = _run_helper({"action": "send_by_display_name", "display_name": payload.group, "body": payload.body})
             try:
@@ -311,7 +438,7 @@ def send(payload: SendPayload) -> Dict[str, Any]:
         except HTTPException:
             pass
 
-        # 1) Then try DB resolver (FDA required)
+        # 2) Then try DB resolver (FDA required)
         q = payload.group
         r = _run_helper({"action": "resolve", "query": q})
         candidates = r.get("results") or []
@@ -320,7 +447,7 @@ def send(payload: SendPayload) -> Dict[str, Any]:
             if sq and sq != q:
                 r = _run_helper({"action": "resolve", "query": sq})
                 candidates = r.get("results") or []
-        # 2) Fallback to AppleScript fuzzy resolver
+        # 3) Fallback to AppleScript fuzzy resolver
         if not candidates:
             r = _run_helper({"action": "resolve_as", "query": q})
             candidates = r.get("results") or []
@@ -334,14 +461,14 @@ def send(payload: SendPayload) -> Dict[str, Any]:
         chat_id = cand.get("chat_id")
         display_name = cand.get("display_name") or payload.group
 
-        # 3) Prefer sending by display name when available (use resolved display name)
+        # 4) Prefer sending by display name when available (use resolved display name)
         try:
             resp = _run_helper({"action": "send_by_display_name", "display_name": display_name, "body": payload.body})
             return resp
         except HTTPException:
             pass
 
-        # 4) If chat id is scriptable, try it
+        # 5) If chat id is scriptable, try it
         if isinstance(chat_id, str) and (";-;" in chat_id):
             try:
                 return _run_helper({"action": "send", "chat_id": chat_id, "body": payload.body})
@@ -375,7 +502,89 @@ def send(payload: SendPayload) -> Dict[str, Any]:
         except Exception:
             pass
 
-        # 0) Prefer buddy-id path first (most reliable for 1:1): find by display name -> sendToBuddyId
+        # 0) Try enhanced fuzzy matching (contacts and group chats)
+        try:
+            # First check if this might be a group chat (multi-word names often are)
+            if len(payload.contact.split()) > 1:
+                enhanced_group = _find_group_chat_with_enhanced_fuzzy_matching(payload.contact)
+                if enhanced_group and enhanced_group.get('confidence') in ['very_high', 'high']:
+                    # Only auto-select group if high confidence to avoid wrong selections
+                    room_id = enhanced_group.get('room_id')
+                    if room_id:
+                        resp = _run_helper({"action": "send_by_display_name", "display_name": enhanced_group['name'], "body": payload.body})
+                        try:
+                            _ = _memory.insert(
+                                kind="im_contact",
+                                text=f"group:{payload.contact}",
+                                meta={
+                                    "channel": "imessage", 
+                                    "name": enhanced_group['name'],
+                                    "room_id": room_id,
+                                    "match_type": enhanced_group.get('match_type', 'fuzzy'),
+                                    "confidence": enhanced_group.get('confidence', 'unknown'),
+                                    "source": "enhanced_group_fuzzy_matching",
+                                    "type": "group_chat"
+                                },
+                                vector=None,
+                            )
+                        except Exception:
+                            pass
+                        return resp
+            
+            # Try individual contact matching
+            enhanced_contact = _find_contact_with_enhanced_fuzzy_matching(payload.contact)
+            if enhanced_contact:
+                phone = enhanced_contact.get('phone')
+                if phone:
+                    resp = _run_helper({"action": "send", "to": [phone], "body": payload.body})
+                    try:
+                        _ = _memory.insert(
+                            kind="im_contact",
+                            text=f"contact:{payload.contact}",
+                            meta={
+                                "channel": "imessage", 
+                                "name": enhanced_contact['name'],
+                                "handle": phone,
+                                "match_type": enhanced_contact.get('match_type', 'fuzzy'),
+                                "confidence": enhanced_contact.get('confidence', 'unknown'),
+                                "source": "enhanced_fuzzy_matching"
+                            },
+                            vector=None,
+                        )
+                    except Exception:
+                        pass
+                    return resp
+            
+            # If no good individual contact found, try group chats with lower confidence
+            enhanced_group = _find_group_chat_with_enhanced_fuzzy_matching(payload.contact)
+            if enhanced_group:
+                room_id = enhanced_group.get('room_id')
+                if room_id:
+                    print(f"[imessage.send] No individual contact found, trying group chat: {enhanced_group['name']} ({enhanced_group.get('confidence', 'unknown')} confidence)")
+                    resp = _run_helper({"action": "send_by_display_name", "display_name": enhanced_group['name'], "body": payload.body})
+                    try:
+                        _ = _memory.insert(
+                            kind="im_contact",
+                            text=f"group:{payload.contact}",
+                            meta={
+                                "channel": "imessage", 
+                                "name": enhanced_group['name'],
+                                "room_id": room_id,
+                                "match_type": enhanced_group.get('match_type', 'fuzzy'),
+                                "confidence": enhanced_group.get('confidence', 'unknown'),
+                                "source": "enhanced_group_fuzzy_matching_fallback",
+                                "type": "group_chat"
+                            },
+                            vector=None,
+                        )
+                    except Exception:
+                        pass
+                    return resp
+        except Exception as e:
+            print(f"Enhanced fuzzy matching failed: {e}")
+            pass
+        
+        # 1) Prefer buddy-id path (reliable for 1:1): find by display name -> sendToBuddyId
         try:
             data = _run_helper({"action": "send_by_contact_name", "contact": payload.contact, "body": payload.body})
             try:
@@ -414,7 +623,7 @@ def send(payload: SendPayload) -> Dict[str, Any]:
                 pass
             # Fall through to other strategies
 
-        # 1) Try direct display-name send (restores legacy behavior that worked for some 1:1 threads)
+        # 2) Try direct display-name send (restores legacy behavior that worked for some 1:1 threads)
         try:
             data = _run_helper({"action": "send_by_display_name", "display_name": payload.contact, "body": payload.body})
             try:
@@ -430,7 +639,7 @@ def send(payload: SendPayload) -> Dict[str, Any]:
         except HTTPException:
             pass
 
-        # 2) Resolve candidates and choose a single preferred handle (phone) to send directly
+        # 3) Resolve candidates and choose a single preferred handle (phone) to send directly
         q = payload.contact
         r = _run_helper({"action": "resolve", "query": q})
         candidates = r.get("results") or []

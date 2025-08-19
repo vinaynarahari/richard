@@ -32,7 +32,32 @@ struct ChatView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // header removed per request
+            // Chat mode picker - always visible
+            HStack {
+                Picker("Mode", selection: $mode) {
+                    ForEach(APIClient.ChatMode.allCases) { m in
+                        Text(m.label).tag(m)
+                    }
+                }
+                .pickerStyle(.menu)
+                
+                Toggle("Remember this", isOn: $remember)
+                    .toggleStyle(.switch)
+                
+                Spacer()
+                
+                if showDebug {
+                    Button("Hide Debug") {
+                        showDebug.toggle()
+                    }
+                } else {
+                    Button("Debug") {
+                        showDebug.toggle()
+                    }
+                    .help("Show debug information")
+                }
+            }
+            
             if showDebug { debugPane }
             conversationList
             composer

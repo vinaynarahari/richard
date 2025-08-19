@@ -26,3 +26,8 @@ faiss-cpu==1.7.4
 python-multipart==0.0.6
 
 # Additional utilities
+
+# Web scraping and MCP support
+aiohttp==3.9.1
+beautifulsoup4==4.12.2
+lxml==4.9.3

@@ -1,0 +1,87 @@
+2025-08-14 08:38:18,056 - middleware - WARNING - No vault password provided - credential vault disabled
+2025-08-14 08:38:18,057 - __main__ - INFO - Starting Playwright MCP server: npx @playwright/mcp@latest --browser chromium --viewport-size 1280,720 --user-agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 --port 3001 --headless --isolated --block-service-workers --ignore-https-errors --save-trace --output-dir ./browser/traces --blocked-origins malware.com;phishing.com;ads.doubleclick.net
+2025-08-14 08:38:21,061 - __main__ - INFO - Playwright MCP server started on port 3001
+2025-08-14 08:38:21,170 - __main__ - INFO - Playwright MCP server stopped
+2025-08-14 08:39:03,630 - middleware - WARNING - No vault password provided - credential vault disabled
+2025-08-14 08:39:03,631 - middleware - WARNING - No vault password provided - credential vault disabled
+2025-08-14 08:39:03,631 - audit - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - audit - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - audit - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - audit - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - audit - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for navigate_to_url
+2025-08-14 08:39:03,631 - audit - INFO - API - FAILED - User: unknown - Tool: navigate_to_url - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - audit - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for interact_with_page
+2025-08-14 08:39:03,631 - audit - INFO - API - FAILED - User: unknown - Tool: interact_with_page - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - middleware - WARNING - No vault password provided - credential vault disabled
+2025-08-14 08:39:03,632 - server - INFO - Starting Playwright MCP server: npx @playwright/mcp@latest --browser chromium --viewport-size 1280,720 --user-agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 --port 3001 --headless --isolated --block-service-workers --ignore-https-errors --save-trace --output-dir ./browser/traces --blocked-origins malware.com;phishing.com;ads.doubleclick.net
+2025-08-14 08:39:06,636 - server - INFO - Playwright MCP server started on port 3001
+2025-08-14 08:39:08,638 - audit - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:08,638 - audit - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:08,638 - __main__ - ERROR - ❌ Test failed: Authentication required
+2025-08-14 08:39:08,740 - server - INFO - Playwright MCP server stopped
+2025-08-17 04:23:04,772 - middleware - WARNING - No vault password provided - credential vault disabled
+2025-08-17 04:23:04,772 - __main__ - INFO - Starting Playwright MCP server: npx @playwright/mcp@latest --browser chromium --viewport-size 1280,720 --user-agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 --port 3001 --headless --isolated --block-service-workers --ignore-https-errors --save-trace --output-dir ./browser/traces --blocked-origins malware.com;phishing.com;ads.doubleclick.net
+2025-08-17 04:23:07,776 - __main__ - INFO - Playwright MCP server started on port 3001
+2025-08-17 04:23:07,880 - __main__ - INFO - Playwright MCP server stopped
+2025-08-17 04:31:24,999 - __main__ - INFO - Starting Playwright MCP server: npx @playwright/mcp@latest --browser chromium --viewport-size 1280,720 --user-agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 --port 3001 --headless --isolated --block-service-workers --ignore-https-errors --save-trace --output-dir ./browser/traces --blocked-origins malware.com;phishing.com;ads.doubleclick.net
+2025-08-17 04:31:28,002 - __main__ - INFO - Playwright MCP server started on port 3001
+2025-08-17 04:31:28,104 - __main__ - INFO - Playwright MCP server stopped
+2025-08-17 04:32:25,879 - __main__ - INFO - Starting Playwright MCP server: node ../playwright-search/cli.js --browser chromium --viewport-size 1280,720 --user-agent Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 --port 3001 --headless --isolated --block-service-workers --ignore-https-errors --save-trace --output-dir ./traces --blocked-origins malware.com;phishing.com;ads.doubleclick.net
+2025-08-17 04:32:28,883 - __main__ - ERROR - Playwright server failed to start: node:internal/modules/cjs/loader:1413
+  throw err;
+  ^
+
+Error: Cannot find module '/Users/vinaynarahari/Desktop/Github/richard/playwright-search/cli.js'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1410:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1051:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1056:22)
+    at Module._load (node:internal/modules/cjs/loader:1219:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:238:24)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v24.6.0
+
+2025-08-17 04:32:28,884 - __main__ - ERROR - Failed to start Playwright server: Playwright server startup failed: node:internal/modules/cjs/loader:1413
+  throw err;
+  ^
+
+Error: Cannot find module '/Users/vinaynarahari/Desktop/Github/richard/playwright-search/cli.js'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1410:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1051:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1056:22)
+    at Module._load (node:internal/modules/cjs/loader:1219:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:238:24)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v24.6.0
+
+2025-08-17 04:32:28,884 - __main__ - ERROR - Server error: Playwright server startup failed: node:internal/modules/cjs/loader:1413
+  throw err;
+  ^
+
+Error: Cannot find module '/Users/vinaynarahari/Desktop/Github/richard/playwright-search/cli.js'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1410:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1051:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1056:22)
+    at Module._load (node:internal/modules/cjs/loader:1219:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:238:24)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v24.6.0
+
+2025-08-17 04:32:28,885 - __main__ - INFO - Playwright MCP server stopped

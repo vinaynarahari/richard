@@ -26,6 +26,9 @@ from .routes.contacts import router as contacts_router  # NEW
 from .routes.voice import router as voice_router
 VOICE_ROUTER_AVAILABLE = True
 
+# Import MCP router
+from .routes.mcp import router as mcp_router
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Richard Orchestrator", version=os.getenv("ORCH_VERSION", "0.1.0"))
@@ -50,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(notion_router)  # NEW
     app.include_router(search_router)  # NEW
     app.include_router(contacts_router)  # NEW
+    app.include_router(mcp_router)  # NEW: MCP endpoints
 
     @app.get("/health")
     async def health() -> dict:

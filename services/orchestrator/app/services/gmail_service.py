@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, Tuple
@@ -63,6 +64,20 @@ class GmailService:
             client_secret=token_dict.get("client_secret"),
             scopes=token_dict.get("scopes"),
         )
+        
+        # Force refresh if credentials are expired or will expire soon
+        if creds.expired or (creds.expiry and creds.expiry.timestamp() - time.time() < 300):  # 5 min buffer
+            print(f"[GmailService] Refreshing expired token for {account}")
+            try:
+                from google.auth.transport.requests import Request
+                creds.refresh(Request())
+                print(f"[GmailService] Token refreshed successfully for {account}")
+                # Persist the refreshed token immediately
+                await self._maybe_persist_refreshed(account, creds)
+            except Exception as e:
+                print(f"[GmailService] Token refresh failed for {account}: {e}")
+                raise RuntimeError(f"Token refresh failed for {account}. Please re-authenticate. Error: {e}")
+        
         return creds
 
     async def _maybe_persist_refreshed(self, account: str, creds: Credentials) -> None:
@@ -119,6 +134,27 @@ class GmailService:
             await self._maybe_persist_refreshed(account, creds)
             return sent
         except HttpError as e:
+            # Handle 401 Unauthorized (invalid token) by attempting one retry with fresh credentials
+            if hasattr(e, 'status_code') and e.status_code == 401:
+                print(f"[GmailService] Got 401 error, attempting token refresh for {account}")
+                try:
+                    # Force a fresh credential build and refresh
+                    creds = await self._build_creds(account)
+                    from google.auth.transport.requests import Request
+                    creds.refresh(Request())
+                    await self._maybe_persist_refreshed(account, creds)
+                    
+                    # Retry the send operation
+                    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+                    mime = self._mime_from_markdown(account, to, subject, body_markdown)
+                    msg = self._encode_message(mime)
+                    sent = service.users().messages().send(userId="me", body=msg).execute()
+                    await self._maybe_persist_refreshed(account, creds)
+                    return sent
+                except Exception as retry_error:
+                    print(f"[GmailService] Retry after token refresh failed: {retry_error}")
+                    raise RuntimeError(f"Gmail send failed after token refresh. Please re-authenticate account {account}. Original error: {e}") from e
+            
             try:
                 err_json = e.error_details if hasattr(e, "error_details") else e.content
             except Exception:

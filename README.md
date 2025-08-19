@@ -67,3 +67,5 @@ deactivate
 - If you already have a FastAPI app file, adjust the uvicorn target accordingly (e.g., `uvicorn services.orchestrator.main:app --reload`). 
 
 - If you want, I can run these for you automatically.
+cd /Users/vinaynarahari/Desktop/Github/richard/mcp-servers 
+python start-all.py     

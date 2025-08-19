@@ -1,0 +1,3 @@
+[console_scripts]
+mac-messages-mcp = mac_messages_mcp.server:run_server
+mac_messages_mcp = mac_messages_mcp.server:run_server

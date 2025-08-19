@@ -4,7 +4,15 @@
   "description": "This directory contains Model Context Protocol (MCP) servers that provide external service integrations for the Richard application.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "python start-all.py",
+    "start:list": "python start-all.py --list",
+    "start:gmail": "python start-all.py gmail",
+    "start:notion": "python start-all.py notion",
+    "start:google-search": "python start-all.py google-search",
+    "start:browser": "python start-all.py browser",
+    "start:playwright": "python start-all.py playwright-search",
+    "start:security": "python start-all.py security",
+    "test": "python test_startup.py"
   },
   "keywords": [],
   "author": "",

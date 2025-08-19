@@ -1,0 +1,32 @@
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for navigate_to_url
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for navigate_to_url
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for navigate_to_url
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: navigate_to_url - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: navigate_to_url - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: navigate_to_url - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for interact_with_page
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for interact_with_page
+2025-08-14 08:39:03,631 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for interact_with_page
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: interact_with_page - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: interact_with_page - IP: unknown - Error: Authentication required
+2025-08-14 08:39:03,631 - INFO - API - FAILED - User: unknown - Tool: interact_with_page - IP: unknown - Error: Authentication required
+2025-08-14 08:39:08,638 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:08,638 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:08,638 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:08,638 - WARNING - SECURITY - UNAUTHORIZED_ACCESS - Missing auth token for search_web
+2025-08-14 08:39:08,638 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:08,638 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:08,638 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required
+2025-08-14 08:39:08,638 - INFO - API - FAILED - User: unknown - Tool: search_web - IP: unknown - Error: Authentication required

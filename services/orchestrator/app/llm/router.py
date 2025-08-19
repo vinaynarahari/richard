@@ -240,4 +240,34 @@ class LLMRouter:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_recent_messages",
+                    "description": "Get recent messages from the Messages app. Can filter by contact name or phone number.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "hours": {"type": "integer", "description": "Number of hours to look back (default: 24)", "default": 24},
+                            "contact": {"type": "string", "description": "Optional: filter by contact name or phone number"}
+                        },
+                        "required": []
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_contacts",
+                    "description": "Search for contacts by name, phone number, or email. Returns contact information including phone numbers.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query (name, phone number, or email)"},
+                            "max_results": {"type": "integer", "description": "Maximum number of results to return (default: 5)", "default": 5}
+                        },
+                        "required": ["query"]
+                    },
+                },
+            },
         ]
