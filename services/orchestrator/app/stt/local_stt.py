@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
+import httpx
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,8 @@ class LocalSTTService:
     def __init__(self):
         self.whisper_cpp_path = self._find_whisper_cpp()
         self.model_path = self._find_whisper_model()
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
         
     def _find_whisper_cpp(self) -> Optional[str]:
         """Stubbed: we are not using whisper.cpp right now"""
@@ -26,6 +30,194 @@ class LocalSTTService:
     
     def _find_whisper_model(self) -> Optional[str]:
         """Stubbed: we are not using whisper.cpp right now"""
+        return None
+    
+    async def transcribe_with_openai_whisper(self, audio_path: str, language: str = "en") -> Optional[str]:
+        """Transcribe using OpenAI Whisper API - fastest and most accurate"""
+        if not self.openai_api_key:
+            logger.warning("OpenAI API key not available")
+            return None
+            
+        try:
+            # Convert to proper format for OpenAI
+            wav_path = await self._convert_to_wav(audio_path)
+            if not wav_path:
+                logger.error("Failed to convert audio for OpenAI Whisper")
+                return None
+            
+            # Prepare the file for upload
+            with open(wav_path, 'rb') as audio_file:
+                files = {
+                    'file': (os.path.basename(wav_path), audio_file, 'audio/wav'),
+                    'model': (None, 'whisper-1'),
+                    'language': (None, language),
+                    'response_format': (None, 'text')
+                }
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        "https://api.openai.com/v1/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {self.openai_api_key}"},
+                        files=files
+                    )
+            
+            # Clean up temp file if we created one
+            if wav_path != audio_path:
+                os.unlink(wav_path)
+            
+            if response.status_code == 200:
+                text = response.text.strip()
+                if text:
+                    logger.info(f"OpenAI Whisper transcription successful: {text[:50]}...")
+                    return text
+            else:
+                logger.error(f"OpenAI Whisper API error: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"OpenAI Whisper transcription error: {e}")
+        
+        return None
+    
+    async def transcribe_with_groq_whisper(self, audio_path: str, language: str = "en") -> Optional[str]:
+        """Transcribe using Groq Whisper API - very fast alternative"""
+        if not self.groq_api_key:
+            logger.warning("Groq API key not available")
+            return None
+            
+        try:
+            # Convert to proper format for Groq
+            wav_path = await self._convert_to_wav(audio_path)
+            if not wav_path:
+                logger.error("Failed to convert audio for Groq Whisper")
+                return None
+            
+            # Prepare the file for upload
+            with open(wav_path, 'rb') as audio_file:
+                files = {
+                    'file': (os.path.basename(wav_path), audio_file, 'audio/wav'),
+                    'model': (None, 'whisper-large-v3'),
+                    'language': (None, language),
+                    'response_format': (None, 'text')
+                }
+                
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        "https://api.groq.com/openai/v1/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {self.groq_api_key}"},
+                        files=files
+                    )
+            
+            # Clean up temp file if we created one
+            if wav_path != audio_path:
+                os.unlink(wav_path)
+            
+            if response.status_code == 200:
+                text = response.text.strip()
+                if text:
+                    logger.info(f"Groq Whisper transcription successful: {text[:50]}...")
+                    return text
+            else:
+                logger.error(f"Groq Whisper API error: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"Groq Whisper transcription error: {e}")
+        
+        return None
+    
+    async def transcribe_with_faster_whisper(self, audio_path: str, language: str = "en") -> Optional[str]:
+        """Transcribe using faster-whisper (local, very fast)"""
+        try:
+            # Try to import faster-whisper
+            from faster_whisper import WhisperModel
+            
+            # Use small model for speed, can be configured
+            model_size = os.getenv("WHISPER_MODEL_SIZE", "small")
+            device = "cpu"  # Can be "cuda" if GPU available
+            
+            print(f"[DEBUG STT] Starting transcription with faster-whisper")
+            print(f"[DEBUG STT] Original audio path: {audio_path}")
+            print(f"[DEBUG STT] Model size: {model_size}, Device: {device}")
+            
+            # Load model (cached after first use)
+            if not hasattr(self, '_faster_whisper_model'):
+                print(f"[DEBUG STT] Loading faster-whisper model: {model_size}")
+                logger.info(f"Loading faster-whisper model: {model_size}")
+                self._faster_whisper_model = WhisperModel(model_size, device=device)
+            else:
+                print(f"[DEBUG STT] Using cached faster-whisper model")
+            
+            # Convert to proper format
+            print(f"[DEBUG STT] Converting audio to proper format...")
+            wav_path = await self._convert_to_wav(audio_path)
+            if not wav_path:
+                print(f"[DEBUG STT] Audio conversion failed!")
+                return None
+            
+            print(f"[DEBUG STT] Converted audio path: {wav_path}")
+            
+            # Check file size
+            file_size = os.path.getsize(wav_path)
+            print(f"[DEBUG STT] Audio file size: {file_size} bytes")
+            
+            print(f"[DEBUG STT] Starting transcription with settings:")
+            print(f"[DEBUG STT]   Language: {language}")
+            print(f"[DEBUG STT]   VAD filter: False")
+            print(f"[DEBUG STT]   No speech threshold: 0.1")
+            
+            # Transcribe with very sensitive settings to catch all speech
+            segments, info = self._faster_whisper_model.transcribe(
+                wav_path, 
+                language=language,
+                beam_size=1,
+                best_of=1,
+                vad_filter=False,  # Completely disable voice activity detection
+                temperature=0.0,
+                compression_ratio_threshold=4.0,  # More lenient
+                log_prob_threshold=-2.0,  # More lenient
+                no_speech_threshold=0.1,  # Much more sensitive to speech
+                condition_on_previous_text=False,
+                word_timestamps=False,
+                initial_prompt=None,
+            )
+            
+            print(f"[DEBUG STT] Transcription complete. Language detected: {info.language}")
+            print(f"[DEBUG STT] Language probability: {getattr(info, 'language_probability', 'unknown')}")
+            print(f"[DEBUG STT] Duration: {getattr(info, 'duration', 'unknown')} seconds")
+            
+            # Collect all segments
+            text_parts = []
+            segment_count = 0
+            
+            print(f"[DEBUG STT] Processing segments...")
+            for segment in segments:
+                segment_count += 1
+                print(f"[DEBUG STT] Segment {segment_count}: [{segment.start:.1f}s-{segment.end:.1f}s] '{segment.text}'")
+                print(f"[DEBUG STT]   Avg log prob: {getattr(segment, 'avg_logprob', 'unknown')}")
+                print(f"[DEBUG STT]   No speech prob: {getattr(segment, 'no_speech_prob', 'unknown')}")
+                logger.info(f"Segment {segment_count}: [{segment.start:.1f}s-{segment.end:.1f}s] '{segment.text}'")
+                text_parts.append(segment.text)
+            
+            print(f"[DEBUG STT] Total segments processed: {segment_count}")
+            logger.info(f"Faster-whisper processed {segment_count} segments from audio")
+            
+            # Clean up temp file if we created one
+            if wav_path != audio_path:
+                os.unlink(wav_path)
+            
+            if text_parts:
+                result = " ".join(text_parts).strip()
+                print(f"[DEBUG STT] Final transcription result: '{result}'")
+                logger.info(f"Faster-whisper transcription successful: '{result}'")
+                return result
+            else:
+                print(f"[DEBUG STT] No speech segments found!")
+                logger.warning("Faster-whisper found no speech segments")
+                
+        except ImportError:
+            logger.warning("faster-whisper not available. Install with: pip install faster-whisper")
+        except Exception as e:
+            logger.error(f"Faster-whisper transcription error: {e}")
+        
         return None
     
     async def transcribe_with_whisper_cpp(self, audio_path: str) -> Optional[str]:
@@ -178,18 +370,20 @@ class LocalSTTService:
         Transcribe audio using the best available method
         Returns dict with 'text', 'confidence', 'method', 'language'
         """
-        prefer_whisper = os.getenv("PREFER_WHISPER_CPP", "false").lower() in ("1", "true", "yes")
-        if prefer_whisper:
+        # Priority order: Local methods first (no API keys needed)
+        methods = [
+            ("faster_whisper", lambda path: self.transcribe_with_faster_whisper(path, language)),
+            ("python_sr", self.transcribe_with_python_speech_recognition),
+            ("whisper.cpp", self.transcribe_with_whisper_cpp),
+            ("macos_speech", self.transcribe_with_macos_speech),
+        ]
+        
+        # Environment override for preferred method (keeping it simple)
+        preferred_method = os.getenv("STT_PREFERRED_METHOD", "").lower()
+        if preferred_method == "python_sr":
             methods = [
-                ("whisper.cpp", self.transcribe_with_whisper_cpp),
                 ("python_sr", self.transcribe_with_python_speech_recognition),
-                ("macos_speech", self.transcribe_with_macos_speech),
-            ]
-        else:
-            methods = [
-                ("python_sr", self.transcribe_with_python_speech_recognition),
-                ("whisper.cpp", self.transcribe_with_whisper_cpp),
-                ("macos_speech", self.transcribe_with_macos_speech),
+                ("faster_whisper", lambda path: self.transcribe_with_faster_whisper(path, language)),
             ]
         
         for method_name, method_func in methods:
@@ -198,9 +392,14 @@ class LocalSTTService:
                 text = await method_func(audio_path)
                 
                 if text and text.strip():
+                    # Higher confidence for API-based Whisper models
+                    confidence = 0.95 if method_name.endswith("_whisper") else 0.85
+                    if method_name == "whisper.cpp":
+                        confidence = 0.9
+                    
                     return {
                         "text": text.strip(),
-                        "confidence": 0.9 if method_name == "whisper.cpp" else 0.85,
+                        "confidence": confidence,
                         "method": method_name,
                         "language": language,
                         "success": True
