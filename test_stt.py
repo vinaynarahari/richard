@@ -1,119 +1,97 @@
 #!/usr/bin/env python3
 """
-Test the new STT service
+Test script for the new fast STT service
 """
 
 import asyncio
-import sys
 import os
+import sys
 import tempfile
 import subprocess
+from pathlib import Path
 
-# Add path for imports
-sys.path.append('services/orchestrator')
+# Add the orchestrator app to the path
+sys.path.insert(0, str(Path(__file__).parent / "services" / "orchestrator"))
 
-async def test_stt_service():
-    """Test the STT service with a real audio file"""
-    print("🎤 Testing Local STT Service")
+async def test_fast_stt():
+    """Test the fast STT service"""
+    
+    print("🎤 Testing Fast Speech-to-Text Service")
     print("=" * 50)
     
-    # Create a test audio file
-    print("1. Creating test audio file...")
-    temp_audio = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-    temp_audio.close()
+    # Initialize STT service
+    try:
+        from app.stt.local_stt import LocalSTTService
+        stt = LocalSTTService()
+    except ImportError as e:
+        print(f"❌ Failed to import STT service: {e}")
+        return
     
-    # Generate a 3-second sine wave at 440Hz (A note)
+    # Check available methods
+    print("🔍 Checking available STT methods:")
+    print(f"   OpenAI API Key: {'✅' if stt.openai_api_key else '❌'}")
+    print(f"   Groq API Key: {'✅' if stt.groq_api_key else '❌'}")
+    
+    # Try to check for faster-whisper
+    try:
+        import faster_whisper
+        print(f"   Faster-Whisper: ✅")
+    except ImportError:
+        print(f"   Faster-Whisper: ❌ (run ./install_fast_stt.sh)")
+    
+    # Create a simple test audio file (silence)
+    print("\n🎵 Creating test audio file...")
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+        temp_path = temp_file.name
+    
+    # Generate 2 seconds of silence as test audio
     cmd = [
-        'ffmpeg', '-f', 'lavfi', 
-        '-i', 'sine=frequency=440:duration=3',
-        '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
-        '-y', temp_audio.name
+        'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', 
+        '-t', '2', '-y', temp_path
     ]
     
     try:
         subprocess.run(cmd, check=True, capture_output=True)
-        print(f"   ✅ Created test audio: {temp_audio.name}")
+        print(f"   Created: {temp_path}")
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Failed to create audio: {e}")
+        print(f"   ❌ Failed to create test audio: {e}")
+        return
+    except FileNotFoundError:
+        print("   ❌ FFmpeg not found. Run ./install_fast_stt.sh first")
         return
     
-    # Test the STT service
-    print("\n2. Testing STT service...")
+    # Test transcription
+    print("\n🔍 Testing transcription...")
     try:
-        from app.stt.local_stt import get_stt_service
+        result = await stt.transcribe(temp_path, language="en")
         
-        stt_service = get_stt_service()
-        print(f"   📍 STT service initialized")
-        print(f"   📍 Whisper.cpp: {stt_service.whisper_cpp_path}")
-        print(f"   📍 Whisper model: {stt_service.model_path}")
+        print(f"   Success: {result['success']}")
+        print(f"   Method: {result['method']}")
+        print(f"   Confidence: {result['confidence']}")
+        print(f"   Text: '{result['text']}'")
         
-        # Test transcription
-        print("   🔄 Running transcription...")
-        result = await stt_service.transcribe(temp_audio.name)
-        
-        print(f"\n3. STT Results:")
-        print(f"   Success: {result.get('success', False)}")
-        print(f"   Text: '{result.get('text', '')}'")
-        print(f"   Method: {result.get('method', 'unknown')}")
-        print(f"   Confidence: {result.get('confidence', 0.0)}")
-        
-        if result.get('error'):
-            print(f"   Error: {result['error']}")
-        
+        if result['success']:
+            print("✅ STT service is working!")
+        else:
+            print(f"❌ STT failed: {result.get('error', 'Unknown error')}")
+            
     except Exception as e:
-        print(f"   ❌ STT service error: {e}")
+        print(f"❌ STT test failed: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Clean up
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
     
-    # Test via API endpoint
-    print(f"\n4. Testing via API endpoint...")
-    try:
-        import httpx
-        
-        # Check if server is running
-        async with httpx.AsyncClient() as client:
-            try:
-                health_response = await client.get("http://127.0.0.1:5273/health", timeout=5)
-                health_response.raise_for_status()
-                print("   ✅ Server is running")
-                
-                # Test transcription endpoint
-                with open(temp_audio.name, 'rb') as f:
-                    files = {"file": ("test.wav", f, "audio/wav")}
-                    response = await client.post(
-                        "http://127.0.0.1:5273/voice/transcribe",
-                        files=files,
-                        timeout=30
-                    )
-                    response.raise_for_status()
-                    
-                    api_result = response.json()
-                    print(f"   API Result: {api_result}")
-                    
-            except httpx.ConnectError:
-                print("   ❌ Server not running - start with: uvicorn app.main:app --reload --host 127.0.0.1 --port 5273")
-            except Exception as e:
-                print(f"   ❌ API test failed: {e}")
-                
-    except ImportError:
-        print("   ⚠️  httpx not available for API testing")
-    
-    # Cleanup
-    try:
-        os.unlink(temp_audio.name)
-        print(f"\n5. Cleaned up test file")
-    except Exception:
-        pass
-    
-    print(f"\n" + "=" * 50)
-    print("🎉 STT Service Test Complete!")
-    
-    # Show setup instructions
-    print(f"\n💡 To improve STT performance:")
-    print("   1. Run: python services/orchestrator/setup_stt.py")
-    print("   2. Install whisper.cpp: brew install whisper-cpp")
-    print("   3. Install SpeechRecognition: pip install SpeechRecognition")
-    print("   4. Install PyObjC: pip install pyobjc-framework-Speech")
+    print("\n" + "=" * 50)
+    print("📋 Setup Instructions:")
+    print("1. Install dependencies: ./install_fast_stt.sh")
+    print("2. Get Groq API key (free): https://console.groq.com")
+    print("3. Set environment: export GROQ_API_KEY='your-key'")
+    print("4. Restart the voice service")
 
 if __name__ == "__main__":
-    asyncio.run(test_stt_service())
+    asyncio.run(test_fast_stt())

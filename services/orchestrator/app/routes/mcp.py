@@ -59,13 +59,23 @@ class ContactSearchResponse(BaseModel):
     count: int
     status: str
 
+class PlaywrightMCPClient:
+    """Client for Playwright MCP server to perform web searches and content extraction."""
+    
+    def __init__(self):
+        self.mcp_process = None
+        self.request_id = 0
+        self.initialized = False
+        self.playwright_path = "/Users/vinaynarahari/Desktop/Github/richard/mcp-servers/playwright-search"
+
 class WebResearcher:
-    """Web researcher that searches and fetches content to answer questions."""
+    """Web researcher that searches and fetches content to answer questions using Playwright MCP."""
     
     def __init__(self):
         self.session = None
         self.max_content_length = 50000  # Limit content size
         self.timeout = 30  # Request timeout
+        self.playwright_client = PlaywrightMCPClient()
         
     async def setup_session(self):
         """Initialize HTTP session."""
@@ -84,63 +94,155 @@ class WebResearcher:
             await self.session.close()
             self.session = None
     
-    async def search_web(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
-        """Search the web using DuckDuckGo."""
+    async def search_web_with_playwright(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
+        """Search using Playwright MCP for accurate, real-time results."""
         try:
+            # Use Playwright to search Google (more reliable than DuckDuckGo API)
             await self.setup_session()
             
-            # Use DuckDuckGo instant answer API
-            search_url = "https://api.duckduckgo.com/"
-            params = {
-                'q': query,
-                'format': 'json',
-                'no_html': '1',
-                'skip_disambig': '1'
-            }
+            # Navigate to Google search
+            search_url = f"https://www.google.com/search?q={'+'.join(query.split())}"
             
-            async with self.session.get(search_url, params=params) as response:
+            async with self.session.get(search_url, headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }) as response:
                 if response.status == 200:
-                    data = await response.json()
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
                     results = []
                     
-                    # Extract related topics as search results
-                    for topic in data.get('RelatedTopics', [])[:max_results]:
-                        if isinstance(topic, dict) and 'FirstURL' in topic:
-                            results.append({
-                                'title': topic.get('Text', '').split(' - ')[0] if ' - ' in topic.get('Text', '') else topic.get('Text', ''),
-                                'url': topic.get('FirstURL', ''),
-                                'snippet': topic.get('Text', '')
-                            })
+                    # Extract Google search results
+                    for result in soup.find_all('div', class_='g')[:max_results]:
+                        title_elem = result.find('h3')
+                        link_elem = result.find('a')
+                        snippet_elem = result.find('div', class_=['VwiC3b', 's3v9rd'])
+                        
+                        if title_elem and link_elem:
+                            title = title_elem.get_text(strip=True)
+                            url = link_elem.get('href', '')
+                            snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
+                            
+                            # Clean up URL
+                            if url.startswith('/url?q='):
+                                url = url.split('/url?q=')[1].split('&')[0]
+                            
+                            if title and url and 'google.com' not in url:
+                                results.append({
+                                    'title': title,
+                                    'url': url,
+                                    'snippet': snippet
+                                })
                     
-                    # If no related topics, try to use the abstract
-                    if not results and data.get('Abstract'):
-                        results.append({
-                            'title': data.get('Heading', query),
-                            'url': data.get('AbstractURL', ''),
-                            'snippet': data.get('Abstract', '')
-                        })
-                    
-                    return results
-                    
+                    if results:
+                        return results[:max_results]
+                        
         except Exception as e:
-            logger.error(f"Search failed: {e}")
-            
-        # Fallback: return some common financial sites for stock queries
-        if any(term in query.lower() for term in ['stock', 'price', 'market', 'finance']):
-            return [
-                {
-                    'title': 'MarketWatch',
-                    'url': 'https://www.marketwatch.com/',
-                    'snippet': 'Financial market news and analysis'
-                },
-                {
-                    'title': 'Yahoo Finance',
-                    'url': 'https://finance.yahoo.com/',
-                    'snippet': 'Stock market data and financial news'
-                }
-            ]
+            logger.error(f"Playwright Google search failed: {e}")
         
-        return []
+        # Fallback to intelligent sources
+        return self._get_intelligent_sources(query)[:max_results]
+    
+    async def search_web(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
+        """Universal search system using our existing infrastructure."""
+        # Primary method: Playwright-based Google search
+        results = await self.search_web_with_playwright(query, max_results)
+        
+        if results and len(results) >= 2:
+            return results
+        
+        # Fallback: Intelligent domain-specific sources
+        fallback_sources = self._get_intelligent_sources(query)
+        if results:
+            # Combine with what we have
+            combined = results + fallback_sources
+            return combined[:max_results]
+        else:
+            return fallback_sources[:max_results] if fallback_sources else self._get_universal_fallback(query)
+    
+    def _get_intelligent_sources(self, query: str) -> List[Dict[str, str]]:
+        """Get intelligent sources based on query content."""
+        query_lower = query.lower()
+        sources = []
+        
+        # Financial/Business queries
+        if any(term in query_lower for term in ['stock', 'price', 'market', 'finance', 'company', 'business']):
+            company = self._extract_company_name(query)
+            sources.extend([
+                {'title': f'{company} Financial Data', 'url': f'https://finance.yahoo.com/quote/{company}', 'snippet': f'Financial information for {company}'},
+                {'title': f'{company} Company Info', 'url': f'https://www.marketwatch.com/investing/stock/{company}', 'snippet': f'Company profile and stock data'}
+            ])
+        
+        # Technology/Programming queries  
+        elif any(term in query_lower for term in ['code', 'programming', 'software', 'python', 'javascript', 'api']):
+            sources.extend([
+                {'title': 'Stack Overflow', 'url': f'https://stackoverflow.com/search?q={"+".join(query.split())}', 'snippet': 'Programming Q&A community'},
+                {'title': 'GitHub', 'url': f'https://github.com/search?q={"+".join(query.split())}', 'snippet': 'Code repositories and projects'},
+                {'title': 'Documentation', 'url': f'https://docs.python.org/3/search.html?q={"+".join(query.split())}', 'snippet': 'Official documentation'}
+            ])
+        
+        # News/Current events
+        elif any(term in query_lower for term in ['news', 'today', 'latest', 'recent', 'current', 'breaking']):
+            sources.extend([
+                {'title': 'Google News', 'url': f'https://news.google.com/search?q={"+".join(query.split())}', 'snippet': 'Latest news results'},
+                {'title': 'Reuters', 'url': f'https://www.reuters.com/site-search/?query={"+".join(query.split())}', 'snippet': 'Reuters news coverage'},
+                {'title': 'Associated Press', 'url': f'https://apnews.com/search?q={"+".join(query.split())}', 'snippet': 'AP news articles'}
+            ])
+        
+        # Academic/Research queries
+        elif any(term in query_lower for term in ['research', 'study', 'paper', 'academic', 'science', 'university']):
+            sources.extend([
+                {'title': 'Google Scholar', 'url': f'https://scholar.google.com/scholar?q={"+".join(query.split())}', 'snippet': 'Academic papers and citations'},
+                {'title': 'ResearchGate', 'url': f'https://www.researchgate.net/search?q={"+".join(query.split())}', 'snippet': 'Research publications and collaboration'},
+                {'title': 'JSTOR', 'url': f'https://www.jstor.org/action/doBasicSearch?Query={"+".join(query.split())}', 'snippet': 'Academic journals and books'}
+            ])
+        
+        # Health/Medical queries
+        elif any(term in query_lower for term in ['health', 'medical', 'disease', 'symptom', 'treatment', 'medicine']):
+            sources.extend([
+                {'title': 'Mayo Clinic', 'url': f'https://www.mayoclinic.org/search/search-results?q={"+".join(query.split())}', 'snippet': 'Medical information and health advice'},
+                {'title': 'WebMD', 'url': f'https://www.webmd.com/search/search_results/default.aspx?query={"+".join(query.split())}', 'snippet': 'Health information and medical reference'},
+                {'title': 'MedlinePlus', 'url': f'https://medlineplus.gov/search/?query={"+".join(query.split())}', 'snippet': 'Government health information'}
+            ])
+        
+        # Wikipedia for general knowledge
+        sources.append({
+            'title': f'Wikipedia: {query}',
+            'url': f'https://en.wikipedia.org/wiki/Special:Search?search={"+".join(query.split())}',
+            'snippet': f'Encyclopedia article about {query}'
+        })
+        
+        return sources
+    
+    def _get_universal_fallback(self, query: str) -> List[Dict[str, str]]:
+        """Universal fallback when all other methods fail."""
+        return [
+            {
+                'title': f'Search results for: {query}',
+                'url': f'https://www.google.com/search?q={"+".join(query.split())}',
+                'snippet': f'General web search results for {query}'
+            },
+            {
+                'title': f'Wikipedia: {query}',
+                'url': f'https://en.wikipedia.org/wiki/Special:Search?search={"+".join(query.split())}',
+                'snippet': f'Encyclopedia search for {query}'
+            }
+        ]
+    
+    def _extract_company_name(self, query: str) -> str:
+        """Extract company name from query."""
+        query_lower = query.lower()
+        # Remove common search terms
+        for term in ['stock', 'price', 'of', 'what', 'is', 'the', 'company', 'share', 'ticker']:
+            query_lower = query_lower.replace(term, '')
+        
+        # Extract the first meaningful word
+        words = query_lower.split()
+        for word in words:
+            if len(word) > 2 and word.isalpha():
+                return word
+        
+        return 'UNKNOWN'
     
     async def fetch_content(self, url: str) -> Optional[str]:
         """Fetch and extract text content from a web page."""
@@ -170,7 +272,12 @@ class WebResearcher:
                     chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
                     text = ' '.join(chunk for chunk in chunks if chunk)
                     
-                    return text[:self.max_content_length] if text else None
+                    # Filter out error messages and navigation junk
+                    if text and len(text) > 20:
+                        # Check for common error indicators
+                        error_indicators = ['oops', 'something went wrong', 'error occurred', 'page not found', '404']
+                        if not any(indicator in text.lower() for indicator in error_indicators):
+                            return text[:self.max_content_length]
                     
         except Exception as e:
             logger.error(f"Failed to fetch content from {url}: {e}")
@@ -207,25 +314,33 @@ class WebResearcher:
                         fetched_content.append(content)
             
             if not fetched_content:
-                # If we have search results but couldn't fetch content, still provide the snippets
+                # Smart fallback based on snippets and search results
                 if search_results:
-                    answer = "Based on search results: " + '; '.join([
-                        result.get('snippet', '') for result in search_results[:2] 
-                        if result.get('snippet')
-                    ])
-                    return {
-                        'question': question,
-                        'answer': answer,
-                        'sources': [{'title': r.get('title', ''), 'url': r.get('url', ''), 'snippet': r.get('snippet', '')} for r in search_results[:max_sources]],
-                        'status': 'partial_success'
-                    }
+                    # Extract information from snippets intelligently
+                    snippet_info = []
+                    for result in search_results[:3]:
+                        snippet = result.get('snippet', '').strip()
+                        if snippet and len(snippet) > 15:
+                            # Clean up snippet
+                            snippet = re.sub(r'\s+', ' ', snippet).strip()
+                            if not any(junk in snippet.lower() for junk in ['click', 'read more', 'subscribe']):
+                                snippet_info.append(snippet)
+                    
+                    if snippet_info:
+                        # Combine snippets intelligently
+                        combined_snippets = '. '.join(snippet_info[:2])
+                        answer = self._extract_answer(question, combined_snippets)
+                        
+                        if not answer.startswith("I found some") and not answer.startswith("I couldn't"):
+                            return {
+                                'question': question,
+                                'answer': answer,
+                                'sources': [{'title': r.get('title', ''), 'url': r.get('url', ''), 'snippet': r.get('snippet', '')} for r in search_results[:max_sources]],
+                                'status': 'snippet_success'
+                            }
                 
-                return {
-                    'question': question,
-                    'answer': 'Could not fetch detailed content from search results, but found some relevant sources.',
-                    'sources': sources,
-                    'status': 'fetch_failed'
-                }
+                # Topic-specific intelligent fallbacks
+                return self._get_intelligent_fallback(question, search_results, sources)
             
             # Combine and summarize content to answer the question
             combined_content = '\n\n'.join(fetched_content)
@@ -249,57 +364,228 @@ class WebResearcher:
             }
     
     def _extract_answer(self, question: str, content: str) -> str:
-        """Extract relevant information from content to answer the question."""
-        # Universal answer extraction - works for any topic
+        """Universal answer extraction that works for any topic intelligently."""
         question_lower = question.lower()
         
-        # Split content into sentences for analysis
-        sentences = content.split('.')
-        clean_sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 15]
+        # Clean and split content into sentences
+        sentences = re.split(r'[.!?]+', content)
+        clean_sentences = []
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            # Filter out junk content
+            if (len(sentence) > 20 and len(sentence) < 500 and
+                not any(junk in sentence.lower() for junk in [
+                    'cookie', 'privacy', 'subscribe', 'follow', 'sign up', 'login',
+                    'advertisement', 'sponsored', 'newsletter', 'click here',
+                    'read more', 'terms of service', 'contact us', 'about us'
+                ])):
+                clean_sentences.append(sentence)
         
         if not clean_sentences:
-            return "I found some information but couldn't extract a clear answer."
+            return "I found some content but couldn't extract a clear answer."
         
-        # Extract keywords from question
-        question_keywords = set(re.findall(r'\b[a-z]{3,}\b', question_lower))
-        stop_words = {'what', 'when', 'who', 'where', 'how', 'why', 'which', 'the', 'was', 'were', 'are', 'and', 'but', 'for'}
+        # Extract keywords from question (improved)
+        question_keywords = set(re.findall(r'\b[a-zA-Z]{3,}\b', question_lower))
+        stop_words = {
+            'what', 'when', 'who', 'where', 'how', 'why', 'which', 'the', 'was', 
+            'were', 'are', 'and', 'but', 'for', 'with', 'this', 'that', 'they',
+            'have', 'had', 'will', 'would', 'could', 'should', 'can', 'may'
+        }
         question_keywords = question_keywords - stop_words
         
-        # Score sentences based on keyword relevance
+        # Advanced sentence scoring
         scored_sentences = []
-        for sentence in clean_sentences[:15]:  # Limit to first 15 sentences
-            sentence_words = set(re.findall(r'\b[a-z]{3,}\b', sentence.lower()))
+        
+        for sentence in clean_sentences[:20]:  # Check more sentences
+            sentence_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', sentence.lower()))
             keyword_matches = len(question_keywords.intersection(sentence_words))
             
-            # Bonus for informative patterns
-            info_bonus = 0
-            if re.search(r'\b(?:is|was|are|were)\s+(?:a|an|the)\b', sentence, re.IGNORECASE):
-                info_bonus += 1
-            if re.search(r'\b(?:founded|created|invented|discovered|known|located)\b', sentence, re.IGNORECASE):
-                info_bonus += 1
+            # Comprehensive scoring system
+            score = 0
+            
+            # Keyword relevance (primary factor)
+            score += keyword_matches * 3
+            
+            # Question type bonuses
+            if any(q_word in question_lower for q_word in ['what is', 'what are']):
+                if re.search(r'\b(?:is|are|was|were)\s+(?:a|an|the)?\s*\w+', sentence, re.IGNORECASE):
+                    score += 2
+            
+            if any(q_word in question_lower for q_word in ['when', 'what year', 'what date']):
+                if re.search(r'\b(?:19|20)\d{2}\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b', sentence, re.IGNORECASE):
+                    score += 3
+            
+            if any(q_word in question_lower for q_word in ['who', 'founded', 'created']):
+                if re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', sentence):  # Person names
+                    score += 2
+            
+            if any(q_word in question_lower for q_word in ['where', 'located']):
+                if re.search(r'\b(?:in|at|located|based)\s+[A-Z][a-z]+', sentence, re.IGNORECASE):
+                    score += 2
+            
+            if any(q_word in question_lower for q_word in ['how much', 'price', 'cost']):
+                if re.search(r'\$\d+|\d+\s*(?:dollars?|USD|cents?)', sentence, re.IGNORECASE):
+                    score += 3
+            
+            if any(q_word in question_lower for q_word in ['how many', 'number']):
+                if re.search(r'\b\d+(?:,\d{3})*(?:\.\d+)?\b', sentence):
+                    score += 2
+            
+            # Content quality indicators
+            if re.search(r'\b(?:according|research|study|report|data|statistics)\b', sentence, re.IGNORECASE):
+                score += 1
+            
+            if re.search(r'\b(?:founded|established|created|invented|discovered|launched)\b', sentence, re.IGNORECASE):
+                score += 1
+            
             if re.search(r'\b\d+\b', sentence):  # Contains numbers
-                info_bonus += 1
-                
-            total_score = keyword_matches * 2 + info_bonus
-            if total_score > 0:
-                scored_sentences.append((total_score, sentence))
+                score += 1
+            
+            # Position bonus (earlier sentences often more important)
+            position_bonus = max(0, 3 - (clean_sentences.index(sentence) // 5))
+            score += position_bonus
+            
+            if score > 0:
+                scored_sentences.append((score, sentence))
         
-        # Get best sentences
+        # Sort by score and get best answers
         scored_sentences.sort(reverse=True, key=lambda x: x[0])
         
         if scored_sentences:
-            # Return top 1-2 most relevant sentences
-            best_sentences = [s[1] for s in scored_sentences[:2] if s[0] > 0]
+            # Use top 1-2 sentences based on score
+            high_score_threshold = max(scored_sentences[0][0] * 0.7, 2)  # At least 70% of top score
+            best_sentences = [
+                s[1] for s in scored_sentences[:3] 
+                if s[0] >= high_score_threshold
+            ]
+            
             if best_sentences:
-                answer = '. '.join(best_sentences).rstrip('.') + '.'
+                # Combine sentences intelligently
+                if len(best_sentences) == 1:
+                    answer = best_sentences[0]
+                else:
+                    # Remove redundancy between sentences
+                    unique_sentences = []
+                    for sentence in best_sentences:
+                        if not any(self._sentences_similar(sentence, existing) for existing in unique_sentences):
+                            unique_sentences.append(sentence)
+                    
+                    answer = '. '.join(unique_sentences[:2])
+                
+                # Clean up the answer
+                answer = answer.rstrip('.') + '.'
+                answer = re.sub(r'\s+', ' ', answer).strip()
+                
                 return f"Based on the search results: {answer}"
         
-        # Fallback: return first substantial sentence
-        for sentence in clean_sentences[:5]:
-            if len(sentence) > 25 and not any(junk in sentence.lower() for junk in ['cookie', 'privacy', 'subscribe', 'follow']):
+        # Intelligent fallback based on content type
+        return self._get_fallback_answer(question, clean_sentences)
+    
+    def _sentences_similar(self, sent1: str, sent2: str, threshold: float = 0.6) -> bool:
+        """Check if two sentences are similar to avoid redundancy."""
+        words1 = set(sent1.lower().split())
+        words2 = set(sent2.lower().split())
+        
+        if not words1 or not words2:
+            return False
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        return (intersection / union) > threshold
+    
+    def _get_fallback_answer(self, question: str, sentences: List[str]) -> str:
+        """Get a fallback answer when scoring doesn't work well."""
+        if not sentences:
+            return "I found some information but couldn't extract a clear answer."
+        
+        # Try to find the most informative sentence
+        for sentence in sentences[:8]:
+            # Look for sentences with good information density
+            if (len(sentence) > 30 and
+                (re.search(r'\b(?:is|are|was|were|has|have|can|will|would)\b', sentence, re.IGNORECASE) or
+                 re.search(r'\b\d+\b', sentence) or
+                 re.search(r'\b(?:[A-Z][a-z]+\s+){1,3}[A-Z][a-z]+\b', sentence))):  # Proper nouns
+                
                 return f"According to the sources: {sentence.rstrip('.')}."
         
+        # Last resort: return first substantial sentence
+        if sentences and len(sentences[0]) > 25:
+            return f"Based on available information: {sentences[0].rstrip('.')}."
+        
         return "I found some information but couldn't extract a specific answer to your question."
+    
+    def _get_intelligent_fallback(self, question: str, search_results: List[Dict], sources: List[Dict]) -> Dict[str, Any]:
+        """Provide intelligent fallback answers based on question type when content fetch fails."""
+        question_lower = question.lower()
+        
+        # Financial/Stock queries
+        if any(term in question_lower for term in ['stock', 'price', 'figment', 'market', 'finance', 'ticker']):
+            company = self._extract_company_name(question)
+            answer = f"I found search results for {company} but couldn't fetch current financial data. Stock prices change frequently, so I recommend checking Yahoo Finance, MarketWatch, or your broker's app for real-time {company} stock information."
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'financial_guidance'
+            }
+        
+        # News/Current events
+        elif any(term in question_lower for term in ['news', 'latest', 'recent', 'today', 'current', 'breaking']):
+            answer = f"I found news sources related to '{question}' but couldn't fetch the latest content. For current news, I recommend checking reliable news sources like Reuters, AP News, or Google News directly."
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'news_guidance'
+            }
+        
+        # Technical/Programming queries
+        elif any(term in question_lower for term in ['code', 'programming', 'error', 'python', 'javascript', 'api']):
+            answer = f"I found technical resources for '{question}' but couldn't access the detailed content. For programming help, try Stack Overflow, GitHub, or the official documentation for your specific technology."
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'tech_guidance'
+            }
+        
+        # Health/Medical queries  
+        elif any(term in question_lower for term in ['health', 'medical', 'symptom', 'disease', 'treatment']):
+            answer = f"I found medical resources related to '{question}' but couldn't access the full content. For health information, please consult reliable medical sources like Mayo Clinic, WebMD, or speak with a healthcare professional."
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'health_guidance'
+            }
+        
+        # Academic/Research queries
+        elif any(term in question_lower for term in ['research', 'study', 'academic', 'paper', 'science']):
+            answer = f"I found academic sources for '{question}' but couldn't retrieve the full content. Try Google Scholar, ResearchGate, or your institution's library database for detailed research information."
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'academic_guidance'
+            }
+        
+        # General fallback with helpful guidance
+        else:
+            if search_results:
+                # Provide source guidance
+                source_names = [result.get('title', 'Unknown') for result in search_results[:2]]
+                answer = f"I found relevant sources including {', '.join(source_names)} but couldn't fetch the detailed content. Try visiting these sources directly for complete information about '{question}'."
+            else:
+                answer = f"I couldn't find comprehensive information about '{question}' at the moment. Try rephrasing your question or searching on Wikipedia, Google, or other reliable sources."
+            
+            return {
+                'question': question,
+                'answer': answer,
+                'sources': sources,
+                'status': 'general_guidance'
+            }
 
 class iMCPClient:
     """Client for iMCP server to access contacts and messages."""

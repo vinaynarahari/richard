@@ -14,6 +14,13 @@ import httpx
 from ..llm.ollama_client import OllamaClient
 from ..voice.voice_engine import VoiceEngine, VoiceConfig, VOICE_AVAILABLE
 
+# Import intent_to_tool at module level to avoid import issues
+try:
+    from .llm import intent_to_tool
+except ImportError:
+    print("[Voice] Warning: Could not import intent_to_tool at startup")
+    intent_to_tool = None
+
 # Remove Ollama base (no dependency when using LM Studio)
 # OLLAMA_BASE = "http://127.0.0.1:11434"
 WHISPER_MODEL = "ZimaBlueAI/whisper-large-v3:latest"
@@ -23,6 +30,15 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 # Global voice engine instance
 _voice_engine: Optional[VoiceEngine] = None
 _voice_active = False
+
+# Conversation context for follow-up questions
+_conversation_context = {
+    'pending_clarification': None,  # Type of clarification needed
+    'last_intent': None,           # Last detected intent
+    'partial_args': {},            # Partially filled arguments
+    'timestamp': None,             # When context was set
+    'original_command': None       # Original user command
+}
 
 
 class VoiceRequest(BaseModel):
@@ -51,13 +67,522 @@ async def _get_voice_engine() -> VoiceEngine:
     return _voice_engine
 
 
+def _is_unclear_contact_name(contact: str) -> bool:
+    """Check if a contact name seems unclear or incorrectly transcribed."""
+    if not contact or len(contact.strip()) < 2:
+        return True
+    
+    contact = contact.lower().strip()
+    
+    # Check for patterns that suggest transcription errors
+    unclear_patterns = [
+        # Mixed case without clear word boundaries
+        lambda x: sum(1 for c in x if c.isupper()) > len(x) // 2,
+        # Contains numbers (unusual for names)  
+        lambda x: any(c.isdigit() for c in x),
+        # Very long single "word" (likely transcription error)
+        lambda x: len(x) > 15 and ' ' not in x,
+        # Contains unusual character sequences
+        lambda x: any(seq in x for seq in ['vroomsinhide', 'xxxx', 'qqqq', 'zzzz']),
+        # Looks like gibberish (repeated chars, unusual patterns)
+        lambda x: len(set(x.replace(' ', ''))) < 3 and len(x) > 4,
+        # Contains no vowels (unusual for names)
+        lambda x: not any(vowel in x for vowel in 'aeiou') and len(x) > 3
+    ]
+    
+    # Check if any unclear pattern matches
+    for pattern in unclear_patterns:
+        try:
+            if pattern(contact):
+                return True
+        except:
+            continue
+    
+    return False
+
+
+def _extract_main_command(raw_command: str) -> str:
+    """Extract the main actionable command from potentially noisy transcribed speech."""
+    import re
+    
+    # Remove leading punctuation and clean up
+    raw_command = raw_command.strip('., ').strip()
+    
+    # Split by common separators and questions that indicate the end of the command
+    split_patterns = [
+        r'\?',  # Question marks often end the actual command
+        r'\bor should\b',  # "or should we..." indicates alternatives/afterthoughts  
+        r'\bwhat\b(?=\s*\?)',  # "what?" at the end
+        r'\bwhy\b(?=\s*\?)',   # "why?" at the end
+        r'\bhow about\b',  # "how about..." suggests alternatives
+        r'\bmaybe\b',  # "maybe..." suggests uncertainty/alternatives
+        r'\bi guess\b',  # "I guess..." suggests uncertainty
+        r'\bi don\'t know\b',  # Indicates uncertainty
+        r'\bnevermind\b',  # Cancel/ignore indicator
+        r'\bforget it\b',  # Cancel indicator
+        r'\bactually\b(?=.*\?)', # "actually..." followed by question
+    ]
+    
+    # Find the first occurrence of any split pattern
+    earliest_split = len(raw_command)
+    for pattern in split_patterns:
+        match = re.search(pattern, raw_command, re.IGNORECASE)
+        if match:
+            earliest_split = min(earliest_split, match.start())
+    
+    # Take everything before the first split
+    main_command = raw_command[:earliest_split].strip()
+    
+    # If the main command is too short or empty, fall back to the first sentence
+    if len(main_command.strip()) < 3:
+        sentences = re.split(r'[.!?]+', raw_command)
+        if sentences:
+            main_command = sentences[0].strip()
+    
+    # Final cleanup
+    main_command = main_command.strip('., ')
+    
+    # Look for clear action patterns and extract just those
+    action_patterns = [
+        r'^((?:send|text|message)\s+\w+(?:\s+saying\s+\w+)?)',
+        r'^((?:email|mail)\s+[\w@.]+(?:\s+about\s+\w+)?)',
+        r'^((?:search|find|look up|google)\s+.+?)(?=\s+or|\s+\?|$)',
+        r'^((?:call|phone)\s+\w+)',
+        r'^((?:remind|schedule|set)\s+.+?)(?=\s+or|\s+\?|$)',
+    ]
+    
+    for pattern in action_patterns:
+        match = re.search(pattern, main_command, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    
+    return main_command
+
+
+def _clean_response_for_voice(response_text: str) -> str:
+    """Clean up LLM response to remove verbose/debug content for voice output."""
+    import re
+    
+    # Remove debug/context information that shouldn't be spoken
+    patterns_to_remove = [
+        r'Context:\s*Memory:.*?(?=\n\n|\Z)',  # Remove context dumps
+        r'Subject:\s*.*?\nBody:\s*',  # Remove email-like formatting
+        r'Context:\s*Recent:.*?(?=\n\n|\Z)',  # Remove recent context
+        r'\nContext:.*?(?=\n\n|\Z)',  # Any context lines
+        r'^.*?Body:\s*',  # Remove everything before "Body:"
+    ]
+    
+    cleaned = response_text
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.MULTILINE)
+    
+    # Clean up excessive whitespace
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = re.sub(r'\s{3,}', ' ', cleaned)
+    
+    # If the cleaned response is mostly context/debug info, provide a simple fallback
+    if len(cleaned.strip()) < 10 or 'Context:' in cleaned:
+        # Try to extract the actual message/action if any
+        lines = response_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if (line and 
+                not line.startswith('Context:') and 
+                not line.startswith('Subject:') and
+                not line.startswith('Body:') and
+                len(line) > 5):
+                return line
+        
+        # Ultimate fallback
+        return "Done!"
+    
+    return cleaned.strip()
+
+
+async def _enhanced_intent_detection(user_text: str) -> Optional[Dict[str, Any]]:
+    """Enhanced intent detection with confidence scoring and clarification logic."""
+    import time
+    
+    # Get base intent from existing system
+    base_intent = intent_to_tool(user_text)
+    
+    if not base_intent:
+        return None
+    
+    # Analyze confidence and completeness
+    confidence = 0.8  # Default confidence
+    missing_info = []
+    
+    # Check for message sending intents
+    if base_intent.get('name') == 'send_imessage':
+        args = base_intent.get('args', {})
+        
+        # Check contact clarity - be more lenient for reasonable names
+        contact = args.get('contact', '')
+        if (contact in ['message', 'someone', 'them', 'him', 'her'] or 
+            len(contact) < 2 or 
+            (_is_unclear_contact_name(contact) and len(contact) > 8)):  # Only flag very unclear names
+            missing_info.append('contact')
+            confidence = 0.3
+        elif len(contact) >= 2 and contact.isalpha():
+            # Contact seems reasonable (like "varun", "john", etc.)
+            confidence = 0.9
+        
+        # Check message content - be more lenient
+        body = args.get('body', '')
+        if not body or len(body.strip()) < 1:  # Even single words like "hi" are fine
+            missing_info.append('message')
+            confidence = 0.4
+        elif body.strip():
+            # Has some message content
+            confidence = max(confidence, 0.8)
+    
+    # Check for email intents
+    elif base_intent.get('name') == 'send_email':
+        args = base_intent.get('args', {})
+        
+        # Check recipient
+        to = args.get('to', '')
+        if not to or '@' not in to:
+            missing_info.append('recipient')
+            confidence = 0.3
+        
+        # Check subject
+        subject = args.get('subject', '')
+        if not subject:
+            missing_info.append('subject')
+            confidence = 0.5
+            
+        # Check body
+        body = args.get('body_markdown', '') or args.get('body', '')
+        if not body:
+            missing_info.append('message')
+            confidence = 0.4
+    
+    # Only ask for clarification if confidence is very low AND there's missing critical info
+    if confidence < 0.4 and missing_info:
+        return {
+            'action': 'clarify',
+            'base_intent': base_intent,
+            'missing_info': missing_info,
+            'confidence': confidence,
+            'user_text': user_text
+        }
+    
+    # Return confident intent
+    result = base_intent.copy()
+    result['confidence'] = confidence
+    return result
+
+async def _request_clarification(clarification_data: Dict[str, Any]):
+    """Request clarification from the user."""
+    import time
+    
+    base_intent = clarification_data['base_intent']
+    missing_info = clarification_data['missing_info']
+    
+    # Update conversation context
+    _conversation_context.update({
+        'pending_clarification': base_intent['name'],
+        'last_intent': base_intent,
+        'partial_args': base_intent.get('args', {}),
+        'timestamp': time.time(),
+        'original_command': clarification_data['user_text']
+    })
+    
+    # Generate appropriate clarification question
+    voice_engine = await _get_voice_engine()
+    
+    if base_intent['name'] == 'send_imessage':
+        if 'contact' in missing_info:
+            contact = base_intent['args'].get('contact', '')
+            if contact and len(contact) > 2:
+                question = f"I want to send a message, but I'm not sure I understood the contact name correctly. Did you say '{contact}'? Could you spell their name or give me their phone number?"
+            else:
+                question = "I want to send a message, but I'm not sure who to send it to. Could you tell me the person's name or phone number?"
+        elif 'message' in missing_info:
+            contact = base_intent['args'].get('contact', 'them')
+            question = f"What message would you like me to send to {contact}?"
+        else:
+            question = "I need more information to send that message. Could you be more specific?"
+    
+    elif base_intent['name'] == 'send_email':
+        if 'recipient' in missing_info:
+            question = "I want to send an email, but I need the recipient's email address. Who should I send it to?"
+        elif 'subject' in missing_info:
+            question = "What should the subject line of the email be?"
+        elif 'message' in missing_info:
+            question = "What would you like the email to say?"
+        else:
+            question = "I need more information to send that email. Could you provide more details?"
+    
+    else:
+        question = f"I'm not completely sure how to {base_intent['name']}. Could you provide more details?"
+    
+    print(f"[Voice] Requesting clarification: {question}")
+    await voice_engine.speak_response(question)
+
+async def _handle_clarification_response(user_response: str) -> bool:
+    """Handle user response to a clarification request."""
+    import time
+    
+    # Check if context is still valid (within 2 minutes)
+    if time.time() - _conversation_context.get('timestamp', 0) > 120:
+        _conversation_context.update({
+            'pending_clarification': None,
+            'last_intent': None,
+            'partial_args': {},
+            'timestamp': None,
+            'original_command': None
+        })
+        return False
+    
+    last_intent = _conversation_context['last_intent']
+    partial_args = _conversation_context['partial_args'].copy()
+    
+    # Parse the response based on what we were asking for
+    if last_intent['name'] == 'send_imessage':
+        # Check if this is a confirmation/continuation of the previous message request
+        response_lower = user_response.lower().strip()
+        
+        # Handle confirmations and corrections
+        if any(word in response_lower for word in ['yes', 'yeah', 'correct', 'right']) and partial_args.get('contact'):
+            # User is confirming the contact is correct, now check if we need the message
+            if not partial_args.get('body'):
+                # Extract message from the current response
+                import re
+                message_patterns = [
+                    r'send (?:him|her|them) (?:a message saying |message saying |)(.+)',
+                    r'say (.+)',
+                    r'tell (?:him|her|them) (.+)',
+                    r'message saying (.+)',
+                    r'saying (.+)'
+                ]
+                
+                for pattern in message_patterns:
+                    match = re.search(pattern, response_lower)
+                    if match:
+                        partial_args['body'] = match.group(1).strip().rstrip('.')
+                        break
+                
+                # If still no message found, use common phrases
+                if not partial_args.get('body') and any(word in response_lower for word in ['hi', 'hello', 'hey']):
+                    partial_args['body'] = 'hi'
+                    
+        elif not partial_args.get('contact') or partial_args.get('contact') in ['message', 'someone']:
+            # Use the response as the contact
+            partial_args['contact'] = user_response.strip()
+        
+        # If we were asking for message content and haven't found it above
+        elif not partial_args.get('body') or len(partial_args.get('body', '').strip()) < 1:
+            partial_args['body'] = user_response.strip()
+    
+    elif last_intent['name'] == 'send_email':
+        # If we were asking for recipient
+        if not partial_args.get('to') or '@' not in partial_args.get('to', ''):
+            partial_args['to'] = user_response.strip()
+        
+        # If we were asking for subject
+        elif not partial_args.get('subject'):
+            partial_args['subject'] = user_response.strip()
+        
+        # If we were asking for body
+        elif not partial_args.get('body_markdown'):
+            partial_args['body_markdown'] = user_response.strip()
+    
+    # Try to execute the complete command now
+    try:
+        result = await dispatch_tool(last_intent['name'], partial_args)
+        voice_engine = await _get_voice_engine()
+        
+        if isinstance(result, str):
+            await voice_engine.speak_response(result)
+        else:
+            await voice_engine.speak_response("Done!")
+        
+        # Clear conversation context
+        _conversation_context.update({
+            'pending_clarification': None,
+            'last_intent': None,
+            'partial_args': {},
+            'timestamp': None,
+            'original_command': None
+        })
+        
+        return True
+        
+    except Exception as e:
+        voice_engine = await _get_voice_engine()
+        await voice_engine.speak_response(f"Sorry, I couldn't complete that: {str(e)}")
+        
+        # Clear context on error
+        _conversation_context.update({
+            'pending_clarification': None,
+            'last_intent': None,
+            'partial_args': {},
+            'timestamp': None,
+            'original_command': None
+        })
+        
+        return True
+
+async def _generate_error_clarification(command_text: str, error_msg: str) -> Optional[str]:
+    """Generate helpful clarification questions when errors occur."""
+    command_lower = command_text.lower()
+    
+    # Handle message-related errors
+    if any(word in command_lower for word in ['message', 'text', 'send']) and any(word in command_lower for word in ['to']):
+        # Extract potential contact name
+        import re
+        
+        # Look for patterns like "send a message to [name]"
+        patterns = [
+            r'(?:send|text).*(?:message|msg).*to\s+([^.]+)',
+            r'(?:message|text)\s+([^.]+)',
+        ]
+        
+        contact_match = None
+        for pattern in patterns:
+            match = re.search(pattern, command_lower)
+            if match:
+                contact_match = match.group(1).strip()
+                break
+        
+        if contact_match:
+            # Clean up the contact name
+            contact_clean = re.sub(r'\s*saying.*$', '', contact_match).strip()
+            contact_clean = contact_clean.replace(',', '').strip()
+            
+            if len(contact_clean) > 2:
+                return f"I want to send a message, but I'm not sure I understood the contact name correctly. Did you say '{contact_clean}'? And what message should I send?"
+        
+        # Generic message clarification
+        return "I want to send a message, but I need to know who to send it to and what the message should say. Could you tell me the person's name and the message?"
+    
+    # Handle email errors
+    if any(word in command_lower for word in ['email', 'mail']):
+        return "I want to help with email, but I need more information. Who should I send the email to, what should the subject be, and what should it say?"
+    
+    # Handle search errors
+    if any(word in command_lower for word in ['search', 'find', 'look up', 'google']):
+        return "I want to search for something, but I'm not sure what you'd like me to look up. What would you like me to search for?"
+    
+    # Handle general action errors
+    if 'not defined' in error_msg or 'import' in error_msg:
+        # This is a technical error, try to be helpful anyway
+        if any(word in command_lower for word in ['send', 'message', 'text', 'email', 'search', 'find']):
+            return "I'm having some technical difficulties, but I still want to help. Could you tell me exactly what you'd like me to do?"
+    
+    # No specific clarification found
+    return None
+
+async def _process_with_llm_fallback(command_text: str):
+    """Process command using LLM when intent_to_tool is not available."""
+    try:
+        # Import LLM dependencies
+        from .llm import _personality_learner, _retrieval_context, _llm_router
+        
+        # Handle wake word extraction
+        processed_text = command_text
+        if "richard" in command_text.lower():
+            parts = command_text.lower().split("richard", 1)
+            if len(parts) > 1 and parts[1].strip():
+                processed_text = parts[1].strip().lstrip(',').strip()
+        
+        # Check if this is a clear, actionable command that shouldn't need clarification
+        command_lower = processed_text.lower()
+        is_clear_command = (
+            # Message commands with clear contact and message
+            (any(word in command_lower for word in ['send', 'message', 'text']) and 
+             'to ' in command_lower and 
+             any(word in command_lower for word in ['saying', 'hi', 'hello', 'hey', 'that'])) or
+            # Search commands with clear query
+            (any(word in command_lower for word in ['search', 'find', 'look up', 'google']) and 
+             len(processed_text.split()) > 2) or
+            # Email commands with recipient and content
+            ('email' in command_lower and '@' in processed_text)
+        )
+        
+        if is_clear_command:
+            print(f"[Voice] Processing clear command with LLM: {processed_text}")
+            
+            # Process with full LLM
+            await _personality_learner.load_personality()
+            retrieved = await _retrieval_context(processed_text)
+            past_conversations = await _personality_learner.recall_relevant_conversations(processed_text, limit=2)
+            
+            messages = [{"role": "user", "content": processed_text}]
+            import os as _os
+            forced_model = _os.getenv("RICHARD_MODEL_VOICE")
+            model = forced_model or _llm_router.pick_model("general", processed_text)
+            
+            persona_prompt = _llm_router.persona.render_system()
+            system_prompt = _personality_learner.generate_system_prompt(persona_prompt)
+            
+            if retrieved or past_conversations:
+                context_parts = []
+                if retrieved:
+                    context_parts.append(f"Memory: {retrieved[:200]}")
+                if past_conversations:
+                    context_parts.append(f"Recent: {'; '.join(past_conversations)}")
+                system_prompt += f"\n\nContext: {' | '.join(context_parts)}"
+            
+            # Add directive for focused action execution
+            system_prompt += "\n\nIMPORTANT: Execute the user's request directly and briefly. Use available tools like send_imessage, send_email, web_search. Do NOT generate verbose explanations or multiple examples. Just do what was asked and give a short confirmation."
+            
+            response = await _llm_router.chat_stream(
+                messages=messages,
+                system_prompt=system_prompt,
+                model=model,
+                tools=_llm_router.tools,
+                tool_choice="auto"
+            )
+            
+            # Get voice engine and speak response
+            voice_engine = await _get_voice_engine()
+            
+            if hasattr(response, 'content') and response.content:
+                await voice_engine.speak_response(response.content)
+            else:
+                await voice_engine.speak_response("I'll help you with that!")
+            
+            return
+        
+        # If not a clear command, ask for clarification
+        voice_engine = await _get_voice_engine()
+        await voice_engine.speak_response("I want to help, but I need more details. Could you tell me exactly what you'd like me to do?")
+        
+    except Exception as e:
+        print(f"[Voice] LLM fallback error: {e}")
+        voice_engine = await _get_voice_engine()
+        await voice_engine.speak_response("I'm having some difficulties. Could you please try again?")
+
 async def _handle_voice_command(command_text: str) -> None:
-    """Handle voice commands by sending to LLM chat"""
+    """Handle voice commands with clarification support and personality learning"""
     try:
         print(f"[Voice] Processing command: {command_text}")
         
-        # Import here to avoid circular imports
-        from .llm import intent_to_tool, _personality_learner, _retrieval_context, _llm_router
+        # Import other dependencies
+        try:
+            from .llm import _personality_learner, _retrieval_context, _llm_router
+        except ImportError as e:
+            print(f"[Voice] Import error for dependencies: {e}")
+            voice_engine = await _get_voice_engine()
+            await voice_engine.speak_response("I'm having trouble accessing my tools. Let me try to help you anyway. What would you like me to do?")
+            return
+        
+        # Check if intent_to_tool is available
+        if intent_to_tool is None:
+            print(f"[Voice] intent_to_tool not available, trying fallback")
+            # Try one more time to import it
+            try:
+                from .llm import intent_to_tool as imported_intent_to_tool
+                globals()['intent_to_tool'] = imported_intent_to_tool
+            except ImportError:
+                print(f"[Voice] Could not import intent_to_tool, processing with LLM instead")
+                # Process with LLM instead of failing
+                await _process_with_llm_fallback(command_text)
+                return
         
         # Define dispatch_tool with web_search support inline to avoid import conflicts
         async def dispatch_tool(name: str, args: Dict[str, Any]) -> str:
@@ -665,14 +1190,17 @@ async def _handle_voice_command(command_text: str) -> None:
             from .llm import dispatch_tool as original_dispatch_tool
             return await original_dispatch_tool(name, args)
         
-        # Handle wake word detection - extract actual command
+        # Handle wake word detection - extract actual command and ignore extraneous speech
         processed_text = command_text
         if "hey richard" in command_text.lower() or "hi richard" in command_text.lower():
             # Extract command after wake word
             parts = command_text.lower().split("richard", 1)
             if len(parts) > 1 and parts[1].strip():
-                processed_text = parts[1].strip()
+                raw_command = parts[1].strip()
+                # Clean up the command by extracting the main actionable part
+                processed_text = _extract_main_command(raw_command)
                 print(f"[Voice] Extracted command after wake word: '{processed_text}'")
+                print(f"[Voice] Cleaned from raw: '{raw_command}'")
             else:
                 # Just wake word, no command
                 voice_engine = await _get_voice_engine()
@@ -687,12 +1215,24 @@ async def _handle_voice_command(command_text: str) -> None:
                 return
         _handle_voice_command._last_command_hash = command_hash
         
-        # Try fast path first
-        pre_intent = intent_to_tool(processed_text)
-        print(f"[Voice] Intent detection result: {pre_intent}")
-        if pre_intent:
+        # Check if this is a follow-up to a pending clarification
+        if _conversation_context['pending_clarification'] is not None:
+            result = await _handle_clarification_response(processed_text)
+            if result:
+                return
+        
+        # Try enhanced intent detection with clarification
+        intent_result = await _enhanced_intent_detection(processed_text)
+        print(f"[Voice] Intent detection result: {intent_result}")
+        
+        if intent_result and intent_result.get('action') == 'clarify':
+            # Need clarification - ask user and wait for response
+            await _request_clarification(intent_result)
+            return
+        elif intent_result and intent_result.get('confidence', 0) > 0.5:
             try:
-                print(f"[Voice] Using fast path - tool: {pre_intent['name']}, args: {pre_intent['args']}")
+                pre_intent = intent_result
+                print(f"[Voice] Using confident intent - tool: {pre_intent['name']}, args: {pre_intent['args']}")
                 # Learn from action request
                 context = {"action": pre_intent["name"], **pre_intent["args"]}
                 insights = await _personality_learner.analyze_user_message(processed_text, context)
@@ -715,30 +1255,48 @@ async def _handle_voice_command(command_text: str) -> None:
         
         print(f"[Voice] No intent detected, using LLM path")
         
-        # If no fast path, use full LLM processing
-        # Load personality and context
-        await _personality_learner.load_personality()
-        retrieved = await _retrieval_context(processed_text)
-        past_conversations = await _personality_learner.recall_relevant_conversations(processed_text, limit=2)
+        # First, check if this should have been caught by intent detection
+        # Extract the core action if there is one
+        if any(word in processed_text.lower() for word in ['send', 'text', 'message', 'email', 'search', 'find', 'call']):
+            print(f"[Voice] Detected action word in command, forcing focused processing")
+            # This looks like it should have been caught - process it more directly
+            # Load personality and minimal context
+            await _personality_learner.load_personality()
+            
+            messages = [{"role": "user", "content": f"Please help me with this specific task: {processed_text}"}]
+            import os as _os
+            forced_model = _os.getenv("RICHARD_MODEL_VOICE")
+            model = forced_model or _llm_router.pick_model("general", processed_text)
+            
+            # Build focused system prompt
+            persona_prompt = _llm_router.persona.render_system()
+            system_prompt = _personality_learner.generate_system_prompt(persona_prompt)
+            system_prompt += "\n\nIMPORTANT: The user has given you a specific task. Execute it directly using the appropriate tool (send_imessage, send_email, web_search, etc.). Give only a brief confirmation when done. Do NOT provide examples or explanations."
+        else:
+            # General conversation - load full context
+            await _personality_learner.load_personality()
+            retrieved = await _retrieval_context(processed_text)
+            past_conversations = await _personality_learner.recall_relevant_conversations(processed_text, limit=2)
+            
+            messages = [{"role": "user", "content": processed_text}]
+            import os as _os
+            forced_model = _os.getenv("RICHARD_MODEL_VOICE")
+            model = forced_model or _llm_router.pick_model("general", processed_text)
+            
+            # Build system prompt strictly from persona
+            persona_prompt = _llm_router.persona.render_system()
+            system_prompt = _personality_learner.generate_system_prompt(persona_prompt)
+            
+            # Add context if available
+            if retrieved or past_conversations:
+                context_parts = []
+                if retrieved:
+                    context_parts.append(f"Memory: {retrieved[:200]}")
+                if past_conversations:
+                    context_parts.append(f"Recent: {'; '.join(past_conversations)}")
+                system_prompt += f"\n\nContext: {' | '.join(context_parts)}"
         
-        # Generate response using LLM (use persona system; allow env override for model)
-        messages = [{"role": "user", "content": processed_text}]
-        import os as _os
-        forced_model = _os.getenv("RICHARD_MODEL_VOICE")
-        model = forced_model or _llm_router.pick_model("general", processed_text)
-        
-        # Build system prompt strictly from persona
-        persona_prompt = _llm_router.persona.render_system()
-        system_prompt = _personality_learner.generate_system_prompt(persona_prompt)
-        
-        # Add context
-        if retrieved or past_conversations:
-            context_parts = []
-            if retrieved:
-                context_parts.append(f"Memory: {retrieved[:200]}")
-            if past_conversations:
-                context_parts.append(f"Recent: {'; '.join(past_conversations)}")
-            system_prompt += f"\n\nContext: {' | '.join(context_parts)}"
+        # Context already added above in the specific branches
 
         # Creative intent boost: jokes/stories/etc should never be refused; make it family-friendly instead
         low = processed_text.lower()
@@ -861,8 +1419,8 @@ async def _handle_voice_command(command_text: str) -> None:
                     break
         
         if response_text.strip():
-            # Clean response for voice
-            clean_response = response_text.strip()
+            # Clean response for voice - remove verbose/debug content
+            clean_response = _clean_response_for_voice(response_text)
             
             # Remove function calls from voice response
             import re
@@ -889,10 +1447,18 @@ async def _handle_voice_command(command_text: str) -> None:
         
     except Exception as e:
         print(f"[Voice] Error handling command: {e}")
-        error_response = "Sorry, I encountered an error processing your request."
+        
+        # Try to recover with clarification based on the error and command
         try:
+            clarification = await _generate_error_clarification(command_text, str(e))
             voice_engine = await _get_voice_engine()
-            await voice_engine.speak_response(error_response)
+            
+            if clarification:
+                print(f"[Voice] Using error recovery clarification: {clarification}")
+                await voice_engine.speak_response(clarification)
+            else:
+                error_response = "Sorry, I encountered an error processing your request."
+                await voice_engine.speak_response(error_response)
         except Exception as voice_e:
             print(f"[Voice] Failed to speak error message: {voice_e}")
 
@@ -1069,52 +1635,14 @@ async def transcribe_audio(
                     "success": True
                 }
             else:
-                # STT failed, try fallback simulation for development
-                import os
-                file_size = os.path.getsize(temp_path)
-                
-                if file_size > 2000:  # Substantial audio
-                    duration_estimate = file_size / 32000
-                    
-                    if duration_estimate < 2:
-                        transcriptions = [
-                            "hey richard what time is it",
-                            "hey richard hello", 
-                            "what's the weather",
-                            "hey richard what's the time in california",
-                        ]
-                    elif duration_estimate < 5:
-                        transcriptions = [
-                            "hey richard send a message to john saying hello",
-                            "hey richard what's my schedule today",
-                            "hey richard how are you doing",
-                            "hey richard what's the stock price of google",
-                        ]
-                    else:
-                        transcriptions = [
-                            "hey richard send a message to john saying hello how are you doing today",
-                            "hey richard can you help me with my schedule and send an email",
-                        ]
-                    
-                    import hashlib
-                    hash_val = int(hashlib.md5(str(file_size).encode()).hexdigest()[:8], 16)
-                    selected = transcriptions[hash_val % len(transcriptions)]
-                    
-                    transcription_result = {
-                        "text": selected,
-                        "language": language or "en", 
-                        "confidence": 0.65,
-                        "method": "fallback_simulation",
-                        "note": f"STT failed ({result.get('error', 'unknown error')}), using simulation"
-                    }
-                else:
-                    return {
-                        "text": "",
-                        "language": language or "en",
-                        "error": "Audio file too small and STT service failed",
-                        "details": result.get("error", "Unknown STT error"),
-                        "processed": False
-                    }
+                # STT failed - return proper error instead of fake data
+                return {
+                    "text": "",
+                    "language": language or "en",
+                    "error": "Speech recognition failed",
+                    "details": result.get("error", "All STT methods failed"),
+                    "processed": False
+                }
                     
         except Exception as e:
             print(f"[Voice] STT service error: {e}")
